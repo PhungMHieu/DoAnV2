@@ -1,0 +1,199 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: my-finance-postgres
+    environment:
+      POSTGRES_DB: myfinance_db
+      POSTGRES_USER: myfinance_user
+      POSTGRES_PASSWORD: myfinance_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - my-finance-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myfinance_user -d myfinance_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: my-finance-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - my-finance-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: my-finance-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: myfinance
+      RABBITMQ_DEFAULT_PASS: myfinance_pass
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - my-finance-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  # Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-auth
+    command: ["node", "dist/apps/auth-service/main"]
+    environment:
+      - NODE_ENV=production
+      - AUTH_SERVICE_PORT=3002
+      - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - JWT_EXPIRES_IN=7d
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/auth/ping", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Transaction Service
+  transaction-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-transaction
+    command: ["node", "dist/apps/transaction-service/main"]
+    environment:
+      - NODE_ENV=production
+      - TRANSACTION_SERVICE_PORT=3001
+      - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
+      - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
+      - RABBITMQ_QUEUE_PREFIX=myfinance
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/docs", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Report Service
+  report-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-report
+    command: ["node", "dist/apps/report-service/main"]
+    environment:
+      - NODE_ENV=production
+      - REPORT_SERVICE_PORT=3003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - TRANSACTION_SERVICE_URL=http://transaction-service:3001
+      - DEFAULT_CURRENCY=VND
+      - HTTP_TIMEOUT=3000
+      - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
+      - REPORT_QUEUE=report_queue
+    ports:
+      - "3003:3003"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/docs", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-gateway
+    command: ["node", "dist/apps/api-gateway/main"]
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_PORT=3000
+      - AUTH_SERVICE_URL=http://auth-service:3002
+      - TRANSACTION_SERVICE_URL=http://transaction-service:3001
+      - REPORT_SERVICE_URL=http://report-service:3003
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+      report-service:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+networks:
+  my-finance-network:
+    driver: bridge

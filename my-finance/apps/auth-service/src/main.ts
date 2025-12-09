@@ -9,6 +9,8 @@ async function bootstrap() {
     description: 'Auth service API',
     path: 'docs', // → /docs
   });
-  await app.listen(process.env.port ?? 3000);
+  const port = Number(process.env.AUTH_SERVICE_PORT || 3002);
+  await app.listen(port, '0.0.0.0');
+  console.log(`Auth service listening on port ${port}`);
 }
 bootstrap();

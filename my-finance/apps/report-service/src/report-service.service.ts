@@ -6,10 +6,12 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import Redis from 'ioredis';
 import { lastValueFrom } from 'rxjs';
+import { AxiosResponse } from 'axios';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
 
@@ -46,14 +48,19 @@ interface TransactionDeletedEvent {
   dateTime: string | Date;
 }
 
+interface AccountBalanceResponse {
+  balance: number;
+}
+
 @Injectable()
 export class ReportServiceService {
   private readonly logger = new Logger(ReportServiceService.name);
 
   constructor(
     @Inject(REDIS_CLIENT)
-    private readonly redis: Redis,          // Redis từ lib redis-common
-    private readonly http: HttpService,     // dùng để gọi sang transaction-service lấy balance
+    private readonly redis: Redis,
+    private readonly http: HttpService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ========== HELPER ==========
@@ -105,7 +112,8 @@ export class ReportServiceService {
     const dailyKey = this.getDailyKey(userId, year, month);
 
     // đảm bảo có currency
-    await this.redis.hsetnx(summaryKey, 'currency', 'VND');
+    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    await this.redis.hsetnx(summaryKey, 'currency', defaultCurrency);
 
     if (type === 'INCOME') {
       await this.redis.hincrbyfloat(summaryKey, 'income:total', val);
@@ -182,14 +190,15 @@ export class ReportServiceService {
 
   private async getAccountBalance(userId: string): Promise<number> {
     // HttpModule trong ReportModule đã set baseURL = TRANSACTION_SERVICE_URL
-    const res$ = this.http.get('/account/balance', {
-      headers: {
-        'x-user-id': userId,
-      },
-    });
+    const res: AxiosResponse<AccountBalanceResponse> = await lastValueFrom(
+      this.http.get<AccountBalanceResponse>('/account/balance', {
+        headers: {
+          'x-user-id': userId,
+        },
+      }),
+    )
 
-    const res = await lastValueFrom(res$);
-    return Number(res$.data?.balance ?? 0);
+    return Number(res.data?.balance ?? 0);
   }
 
   // ========== /transactions/summary ==========
@@ -200,7 +209,8 @@ export class ReportServiceService {
 
     const hash = await this.redis.hgetall(summaryKey);
 
-    const currency = hash.currency || 'VND';
+    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const currency = hash.currency || defaultCurrency;
     const incomeTotal = parseFloat(hash['income:total'] ?? '0');
     const expenseTotal = parseFloat(hash['expense:total'] ?? '0');
 
@@ -295,7 +305,8 @@ export class ReportServiceService {
     const summaryKey = this.getSummaryKey(userId, year, month);
     const hash = await this.redis.hgetall(summaryKey);
 
-    const currency = hash.currency || 'VND';
+    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const currency = hash.currency || defaultCurrency;
     const data: Record<string, number> = {};
 
     for (const [field, value] of Object.entries(hash)) {

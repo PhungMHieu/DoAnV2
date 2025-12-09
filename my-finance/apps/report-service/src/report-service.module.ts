@@ -17,8 +17,8 @@ import { HttpModule } from '@nestjs/axios';
       useFactory: (config: ConfigService) => ({
         baseURL:
           config.get<string>('TRANSACTION_SERVICE_URL') ||
-          'http://transaction-service:3001', // URL của transaction-service
-        timeout: 3000,
+          'http://transaction-service:3001',
+        timeout: config.get<number>('HTTP_TIMEOUT') || 3000,
       }),
     }),
   ],
