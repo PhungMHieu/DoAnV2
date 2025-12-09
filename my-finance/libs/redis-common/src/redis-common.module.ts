@@ -15,6 +15,7 @@ import { RedisCommonService } from './redis-common.service';
       },
       inject: [ConfigService],
     },
+    RedisCommonService,
   ],
   exports: [REDIS_CLIENT, RedisCommonService],
 })

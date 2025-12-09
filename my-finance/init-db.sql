@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL,
+    name VARCHAR(50) DEFAULT 'money',
     balance DECIMAL(15, 2) DEFAULT 0,
     currency VARCHAR(3) DEFAULT 'VND',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

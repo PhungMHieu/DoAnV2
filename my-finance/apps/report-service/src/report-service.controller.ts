@@ -9,13 +9,6 @@ import {
 } from '@nestjs/swagger';
 import { ReportServiceService } from './report-service.service';
 
-@ApiTags('Reports')
-@ApiHeader({
-  name: 'x-user-id',
-  description: 'User ID for authentication',
-  required: true,
-  schema: { type: 'string' }
-})
 @Controller()
 export class ReportServiceController {
   constructor(private readonly reportService: ReportServiceService) {}
@@ -29,6 +22,13 @@ export class ReportServiceController {
   }
 
   @Get('transactions/summary')
+  @ApiTags('Reports')
+  @ApiHeader({
+    name: 'x-user-id',
+    description: 'User ID for authentication',
+    required: true,
+    schema: { type: 'string' }
+  })
   @ApiOperation({ 
     summary: 'Get monthly transaction summary',
     description: 'Retrieves monthly summary including income, expenses by category, and account balance'

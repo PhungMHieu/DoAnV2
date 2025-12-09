@@ -14,12 +14,11 @@ import { AuthGuard } from '@nestjs/passport';
 @Controller('auth')
 export class AuthServiceController {
   constructor(private readonly authServiceService: AuthServiceService) {}
-  @UseGuards(AuthGuard('jwt'))
+  
   @Post('register')
-  @ApiBearerAuth('access-token')
   @ApiOperation({ 
     summary: 'Register new user',
-    description: 'Creates a new user account. Requires valid JWT token.'
+    description: 'Creates a new user account.'
   })
   @ApiBody({
     description: 'User registration data',
@@ -46,7 +45,6 @@ export class AuthServiceController {
       }
     }
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid JWT token' })
   @ApiResponse({ status: 400, description: 'Bad request - Invalid user data' })
   register(@Body() user: User) {
     return this.authServiceService.register(user);

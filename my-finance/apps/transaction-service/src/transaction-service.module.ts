@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TransactionServiceController } from './transaction-service.controller';
 import { TransactionServiceService } from './transaction-service.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -14,6 +15,20 @@ import { AccountService } from './account.service';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: 'postgres',
+        url: config.get<string>('DATABASE_URL'),
+        entities: [AccountEntity, TransactionEntity],
+        synchronize: config.get<string>('NODE_ENV') !== 'production',
+        logging: config.get<string>('NODE_ENV') === 'development',
+      }),
+    }),
     TypeOrmModule.forFeature([AccountEntity, TransactionEntity]),
     RmqModule.register({
       name: REPORT_SERVICE,

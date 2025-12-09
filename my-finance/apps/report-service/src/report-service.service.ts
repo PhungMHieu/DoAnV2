@@ -7,11 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { EventPattern, Payload } from '@nestjs/microservices';
 import Redis from 'ioredis';
-import { lastValueFrom } from 'rxjs';
-import { AxiosResponse } from 'axios';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
 
@@ -48,10 +44,6 @@ interface TransactionDeletedEvent {
   dateTime: string | Date;
 }
 
-interface AccountBalanceResponse {
-  balance: number;
-}
-
 @Injectable()
 export class ReportServiceService {
   private readonly logger = new Logger(ReportServiceService.name);
@@ -59,7 +51,6 @@ export class ReportServiceService {
   constructor(
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
-    private readonly http: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -129,10 +120,9 @@ export class ReportServiceService {
     }
   }
 
-  // ========== EVENT HANDLERS (RabbitMQ) ==========
+  // ========== EVENT HANDLERS (called from controller) ==========
 
-  @EventPattern('transaction.created')
-  async handleCreated(@Payload() payload: TransactionCreatedEvent) {
+  async handleCreated(payload: TransactionCreatedEvent) {
     this.logger.debug(
       `Received transaction.created ${payload.transactionId} for user ${payload.userId}`,
     );
@@ -146,8 +136,7 @@ export class ReportServiceService {
     );
   }
 
-  @EventPattern('transaction.updated')
-  async handleUpdated(@Payload() payload: TransactionUpdatedEvent) {
+  async handleUpdated(payload: TransactionUpdatedEvent) {
     this.logger.debug(
       `Received transaction.updated ${payload.transactionId} for user ${payload.userId}`,
     );
@@ -171,8 +160,7 @@ export class ReportServiceService {
     );
   }
 
-  @EventPattern('transaction.deleted')
-  async handleDeleted(@Payload() payload: TransactionDeletedEvent) {
+  async handleDeleted(payload: TransactionDeletedEvent) {
     this.logger.debug(
       `Received transaction.deleted ${payload.transactionId} for user ${payload.userId}`,
     );
@@ -184,21 +172,6 @@ export class ReportServiceService {
       payload.category,
       -1,
     );
-  }
-
-  // ========== GỌI SANG TRANSACTION-SERVICE LẤY BALANCE ==========
-
-  private async getAccountBalance(userId: string): Promise<number> {
-    // HttpModule trong ReportModule đã set baseURL = TRANSACTION_SERVICE_URL
-    const res: AxiosResponse<AccountBalanceResponse> = await lastValueFrom(
-      this.http.get<AccountBalanceResponse>('/account/balance', {
-        headers: {
-          'x-user-id': userId,
-        },
-      }),
-    )
-
-    return Number(res.data?.balance ?? 0);
   }
 
   // ========== /transactions/summary ==========
@@ -226,7 +199,7 @@ export class ReportServiceService {
     data['income'] = incomeTotal;
 
     // balance lấy từ Account (Transaction-Service) → số dư từ lúc tạo acc
-    const balance = await this.getAccountBalance(userId);
+    // const balance = await this.getAccountBalance(userId);
 
     const monthStr = month.toString().padStart(2, '0');
     const displayMonthYear = `${monthStr}/${year}`;
@@ -238,7 +211,6 @@ export class ReportServiceService {
       totals: {
         expense: expenseTotal,
         income: incomeTotal,
-        balance,
       },
     };
   }

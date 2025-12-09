@@ -16,7 +16,7 @@ export class AccountEntity {
   id: string;
 
   @ApiProperty({ description: 'User ID owner of this account' })
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'user_id' })
   userId: string;
 
   @ApiProperty({ description: 'Account name', example: 'money' })
@@ -36,9 +36,9 @@ export class AccountEntity {
   })
   balance: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }

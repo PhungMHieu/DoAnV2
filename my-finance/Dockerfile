@@ -1,5 +1,5 @@
 # Base image
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Set working directory
 WORKDIR /app
@@ -13,7 +13,7 @@ COPY nest-cli.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # Development stage
-FROM node:18-alpine AS development
+FROM node:20-alpine AS development
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ RUN npm run build transaction-service
 RUN npm run build report-service
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:20-alpine AS production
 
 # Install wget for health checks
 RUN apk add --no-cache wget
