@@ -44,7 +44,7 @@ npm run start:dev api-gateway
 
 | Service | Port | Description | Health Check URL |
 |---------|------|-------------|------------------|
-| API Gateway | 3000 | Main entry point | http://localhost:3000/health |
+| API Gateway | 3000 | Main entry point | http://localhost:2999/health |
 | Auth Service | 3002 | Authentication | http://localhost:3002/docs |
 | Transaction Service | 3001 | Transaction management | http://localhost:3001/docs |
 | Report Service | 3003 | Reports & analytics | http://localhost:3003/docs |
