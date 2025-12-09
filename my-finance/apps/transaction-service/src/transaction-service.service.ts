@@ -1,0 +1,228 @@
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { TransactionEntity } from './entities/transaction.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { ClientProxy } from '@nestjs/microservices';
+import { AccountEntity } from './entities/account.entity';
+
+@Injectable()
+export class TransactionServiceService {
+  private readonly logger = new Logger(TransactionServiceService.name)
+  constructor(
+    @InjectRepository(TransactionEntity)
+    private readonly transactionRepository: Repository<TransactionEntity>,
+    private readonly dataSource: DataSource,
+    @Inject('REPORT_SERVICE')
+    private readonly reportClient: ClientProxy,
+  ) {}
+    private getDelta(category: string, amount: number) {
+      return category.toLowerCase() === 'income'
+        ? amount
+        : -amount;
+    }
+
+  async createTransaction(userId: string, data: TransactionEntity) {
+  return await this.dataSource.transaction(async (manager) => {
+    const txRepo = manager.getRepository(TransactionEntity);
+    const accountRepo = manager.getRepository(AccountEntity);
+
+    // 1. Đảm bảo account tồn tại
+    const account = await this.ensureAccount(userId, manager);
+
+    // 2. Tạo transaction
+    const transaction = txRepo.create({
+      ...data,
+      userId,
+    });
+    const savedTx = await txRepo.save(transaction);
+
+    // 3. Update balance (atomic)
+    const delta = this.getDelta(savedTx.category, savedTx.amount);
+
+    await accountRepo.update(
+      { id: account.id },
+      { balance: () => `balance + ${delta}` },
+    );
+
+    // 4. Emit event cho report-service
+    this.reportClient.emit('transaction.created', {
+      userId,
+      transactionId: savedTx.id,
+      amount: savedTx.amount,
+      category: savedTx.category,
+      dateTime: savedTx.dateTime,
+    });
+
+    return savedTx;
+  });
+}
+
+
+  async updateTransaction(id: string, userId: string, data: TransactionEntity) {
+  return await this.dataSource.transaction(async (manager) => {
+    const txRepo = manager.getRepository(TransactionEntity);
+    const accountRepo = manager.getRepository(AccountEntity);
+
+    const oldTx = await txRepo.findOne({ where: { id, userId } });
+    if (!oldTx) throw new NotFoundException('Transaction not found');
+
+    const newTx = {
+      ...oldTx,
+      ...data,
+    };
+    const updatedTx = await txRepo.save(newTx);
+
+    // 1. rollback old
+    const oldDelta = this.getDelta(oldTx.category, oldTx.amount);
+    // 2. apply new
+    const newDelta = this.getDelta(updatedTx.category, updatedTx.amount);
+    const totalDelta = newDelta - oldDelta;
+
+    await accountRepo.update(
+      { userId },
+      { balance: () => `balance + ${totalDelta}` },
+    );
+
+    this.reportClient.emit('transaction.updated', {
+      userId,
+      transactionId: updatedTx.id,
+      before: {
+        amount: oldTx.amount,
+        category: oldTx.category,
+        dateTime: oldTx.dateTime,
+      },
+      after: {
+        amount: updatedTx.amount,
+        category: updatedTx.category,
+        dateTime: updatedTx.dateTime,
+      },
+    });
+
+    return updatedTx;
+  });
+}
+
+
+  /**
+   * Delete transaction with user verification
+   */
+ async deleteWithUser(id: string, userId: string) {
+  return await this.dataSource.transaction(async (manager) => {
+    const txRepo = manager.getRepository(TransactionEntity);
+    const accountRepo = manager.getRepository(AccountEntity);
+
+    const tx = await txRepo.findOne({ where: { id, userId } });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    await txRepo.remove(tx);
+
+    // rollback lại
+    const delta = this.getDelta(tx.category, tx.amount);
+    await accountRepo.update(
+      { userId },
+      { balance: () => `balance - ${delta}` },
+    );
+
+    this.reportClient.emit('transaction.deleted', {
+      userId,
+      transactionId: id,
+      amount: tx.amount,
+      category: tx.category,
+      dateTime: tx.dateTime,
+    });
+
+    return { message: 'Deleted successfully' };
+  });
+}
+
+
+  async getAvailableMonthsByUser(userId: string): Promise<string[]> {
+    try {
+      // Get all distinct months from transactions FOR SPECIFIC USER
+      const transactions = await this.transactionRepository
+        .createQueryBuilder('transaction')
+        .select('transaction.dateTime')
+        .where('transaction.userId = :userId', { userId }) // Filter by userId
+        .orderBy('transaction.dateTime', 'ASC')
+        .getMany();
+
+      // Extract unique months in MM/YYYY format
+      const monthsSet = new Set<string>();
+      
+      transactions.forEach(transaction => {
+        const date = new Date(transaction.dateTime);
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear().toString();
+        monthsSet.add(`${month}/${year}`);
+      });
+
+      const months = Array.from(monthsSet);
+      months.push('future');
+
+      return months;
+    } catch (error) {
+      throw new BadRequestException(`Failed to fetch available months: ${error.message}`);
+    }
+  }
+   /**
+   * Get all transactions with full details for a specific user
+   */
+  async getTransactionsByUser(userId: string, monthYear?: string): Promise<TransactionEntity[]> {
+    try {
+      // Query transactions directly by userId
+      const queryBuilder = this.transactionRepository
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId });
+
+      // Apply month/year filter if provided
+      if (monthYear) {
+        if (monthYear.toLowerCase() === 'future') {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(0, 0, 0, 0);
+          
+          queryBuilder.andWhere('transaction.dateTime >= :tomorrow', { tomorrow });
+        } else {
+          const parts = monthYear.split('/');
+          if (parts.length === 2) {
+            const month = parseInt(parts[0], 10);
+            const year = parseInt(parts[1], 10);
+            
+            if (!isNaN(month) && !isNaN(year) && month >= 1 && month <= 12) {
+              const startDate = new Date(year, month - 1, 1);
+              const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+              
+              queryBuilder
+                .andWhere('transaction.dateTime >= :startDate', { startDate })
+                .andWhere('transaction.dateTime <= :endDate', { endDate });
+            }
+          }
+        }
+      }
+
+      queryBuilder.orderBy('transaction.dateTime', 'DESC');
+      
+      return await queryBuilder.getMany();
+    } catch (error) {
+      throw new BadRequestException(`Failed to fetch user transactions: ${error.message}`);
+    }
+  }
+
+  private async ensureAccount(userId: string, manager: EntityManager) {
+  const accountRepo = manager.getRepository(AccountEntity);
+
+  let acc = await accountRepo.findOne({ where: { userId } });
+  if (!acc) {
+    acc = accountRepo.create({
+      userId,
+      name: 'money', // default
+      balance: 0,
+    });
+    await accountRepo.save(acc);
+  }
+
+  return acc;
+}
+
+ 
+}

@@ -1,0 +1,1 @@
+export const REPORT_SERVICE = 'REPORT_SERVICE';
