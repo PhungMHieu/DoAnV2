@@ -137,6 +137,28 @@ services:
       - my-finance-network
     restart: unless-stopped
 
+  # Group Service
+  group-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-group
+    command: ["node", "dist/apps/group-service/main"]
+    environment:
+      - NODE_ENV=production
+      - GROUP_SERVICE_PORT=3004
+      - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+    ports:
+      - "3004:3004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+
   # API Gateway
   api-gateway:
     build:
@@ -151,6 +173,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3002
       - TRANSACTION_SERVICE_URL=http://transaction-service:3001
       - REPORT_SERVICE_URL=http://report-service:3003
+      - GROUP_SERVICE_URL=http://group-service:3004
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
     ports:
       - "3000:3000"
@@ -160,6 +183,8 @@ services:
       transaction-service:
         condition: service_started
       report-service:
+        condition: service_started
+      group-service:
         condition: service_started
     networks:
       - my-finance-network

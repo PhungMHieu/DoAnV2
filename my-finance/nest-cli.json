@@ -46,6 +46,15 @@
         "tsConfigPath": "libs/common/tsconfig.lib.json"
       }
     },
+    "group-service": {
+      "type": "application",
+      "root": "apps/group-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/group-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/group-service/tsconfig.app.json"
+      }
+    },
     "my-finance": {
       "type": "application",
       "root": "apps/my-finance",
