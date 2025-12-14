@@ -37,6 +37,7 @@ docker-compose -f docker-compose.dev.yml up -d
 npm run start:dev auth-service
 npm run start:dev transaction-service
 npm run start:dev report-service
+npm run start:dev group-service
 npm run start:dev api-gateway
 ```
 
@@ -48,6 +49,7 @@ npm run start:dev api-gateway
 | Auth Service | 3002 | Authentication | http://localhost:3002/docs |
 | Transaction Service | 3001 | Transaction management | http://localhost:3001/docs |
 | Report Service | 3003 | Reports & analytics | http://localhost:3003/docs |
+| Group Service | 3004 | Group expense management | http://localhost:3004/docs |
 | PostgreSQL | 5432 | Primary database | - |
 | Redis | 6379 | Caching & sessions | - |
 | RabbitMQ | 5672, 15672 | Message broker | http://localhost:15672 |
@@ -64,6 +66,7 @@ DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_
 AUTH_SERVICE_PORT=3002
 TRANSACTION_SERVICE_PORT=3001
 REPORT_SERVICE_PORT=3003
+GROUP_SERVICE_PORT=3004
 API_GATEWAY_PORT=2999
 
 # Security
@@ -224,8 +227,9 @@ The services start in this order:
 1. PostgreSQL, Redis, RabbitMQ
 2. Transaction Service (depends on PostgreSQL, RabbitMQ)
 3. Auth Service (depends on PostgreSQL)
-4. Report Service (depends on Redis, RabbitMQ, Transaction Service)
-5. API Gateway (depends on all other services)
+4. Group Service (depends on PostgreSQL)
+5. Report Service (depends on Redis, RabbitMQ, Transaction Service)
+6. API Gateway (depends on all other services)
 
 ## Production Considerations
 
