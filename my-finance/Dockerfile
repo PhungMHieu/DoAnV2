@@ -37,6 +37,7 @@ RUN npm run build api-gateway
 RUN npm run build auth-service
 RUN npm run build transaction-service
 RUN npm run build report-service
+RUN npm run build group-service
 
 # Production stage
 FROM node:20-alpine AS production
