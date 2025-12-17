@@ -14,7 +14,7 @@ export class GroupMember {
     name: string;
 
     // Liên kết đến user thật sự (join rồi mới có)
-    @Column({ type: 'varchar', nullable: true })
+    @Column({ name: 'user_id', type: 'varchar', nullable: true })
     @Index()
     userId: string | null;
 

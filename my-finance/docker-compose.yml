@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: myfinance_user
       POSTGRES_PASSWORD: myfinance_pass
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
@@ -194,6 +194,22 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: my-finance-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@myfinance.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
