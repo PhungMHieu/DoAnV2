@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ReportServiceController } from './report-service.controller';
 import { ReportEventController } from './report-event.controller';
 import { ReportServiceService } from './report-service.service';
 import { RedisCommonModule } from '@app/redis-common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtExtractMiddleware } from '@app/common';
 
 @Module({
   imports: [
@@ -25,4 +26,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   controllers: [ReportServiceController, ReportEventController],
   providers: [ReportServiceService],
 })
-export class ReportServiceModule {}
+export class ReportServiceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(JwtExtractMiddleware).forRoutes('*');
+  }
+}

@@ -1,14 +1,9 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiHeader } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { GroupServiceService } from './group-service.service';
 
 @ApiTags('Groups')
-@ApiHeader({
-  name: 'x-user-id',
-  description: 'User ID for authentication',
-  required: true,
-  schema: { type: 'string' }
-})
+@ApiBearerAuth('access-token')
 @Controller()
 export class GroupServiceController {
    constructor(private readonly groupsService: GroupServiceService) {}

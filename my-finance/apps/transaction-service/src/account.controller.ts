@@ -3,17 +3,12 @@ import {
   ApiTags, 
   ApiOperation, 
   ApiResponse, 
-  ApiHeader
+  ApiBearerAuth
 } from '@nestjs/swagger';
 import { AccountService } from './account.service';
 
 @ApiTags('Account')
-@ApiHeader({
-  name: 'x-user-id',
-  description: 'User ID for authentication',
-  required: true,
-  schema: { type: 'string' }
-})
+@ApiBearerAuth('access-token')
 @Controller('account')
 export class AccountController {
   constructor(private readonly accountService: AccountService) {}

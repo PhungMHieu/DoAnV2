@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TransactionServiceController } from './transaction-service.controller';
 import { TransactionServiceService } from './transaction-service.service';
@@ -11,6 +11,7 @@ import { AuthCommonModule } from '@app/auth-common/auth-common.module';
 import { AccountEntity } from './entities/account.entity';
 import { AccountController } from './account.controller';
 import { AccountService } from './account.service';
+import { JwtExtractMiddleware } from '@app/common';
 
 
 @Module({
@@ -39,4 +40,8 @@ import { AccountService } from './account.service';
   controllers: [TransactionServiceController, AccountController],
   providers: [TransactionServiceService, AccountService],
 })
-export class TransactionServiceModule {}
+export class TransactionServiceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(JwtExtractMiddleware).forRoutes('*');
+  }
+}

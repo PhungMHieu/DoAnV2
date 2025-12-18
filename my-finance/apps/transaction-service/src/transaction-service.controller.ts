@@ -5,19 +5,14 @@ import {
   ApiResponse, 
   ApiQuery,
   ApiParam,
-  ApiHeader,
+  ApiBearerAuth,
   ApiBody
 } from '@nestjs/swagger';
 import { TransactionServiceService } from './transaction-service.service';
 import { TransactionEntity } from './entities/transaction.entity';
 
 @ApiTags('Transactions')
-@ApiHeader({
-  name: 'x-user-id',
-  description: 'User ID for authentication',
-  required: true,
-  schema: { type: 'string' }
-})
+@ApiBearerAuth('access-token')
 @Controller()
 export class TransactionServiceController {
   constructor(private readonly transactionServiceService: TransactionServiceService) {}

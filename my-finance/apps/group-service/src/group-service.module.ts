@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GroupServiceController } from './group-service.controller';
@@ -6,6 +6,7 @@ import { GroupServiceService } from './group-service.service';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/GroupMember.entity';
 import { AuthCommonModule } from '@app/auth-common/auth-common.module';
+import { JwtExtractMiddleware } from '@app/common';
 
 @Module({
   imports: [
@@ -29,4 +30,8 @@ import { AuthCommonModule } from '@app/auth-common/auth-common.module';
   controllers: [GroupServiceController],
   providers: [GroupServiceService],
 })
-export class GroupServiceModule {}
+export class GroupServiceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(JwtExtractMiddleware).forRoutes('*');
+  }
+}
