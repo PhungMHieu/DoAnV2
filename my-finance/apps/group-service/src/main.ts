@@ -5,6 +5,12 @@ import { setupSwagger } from '@app/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(GroupServiceModule);
   
+  // Enable CORS
+  app.enableCors({
+    origin: true, // Allow all origins in development
+    credentials: true,
+  });
+  
   // Setup Swagger documentation
   setupSwagger(app, {
     title: 'Group Service API',

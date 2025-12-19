@@ -6,6 +6,12 @@ import { setupSwagger } from '@app/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(ReportServiceModule);
 
+  // Enable CORS
+  app.enableCors({
+    origin: true, // Allow all origins in development
+    credentials: true,
+  });
+
   // Microservice RMQ để nhận event
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,

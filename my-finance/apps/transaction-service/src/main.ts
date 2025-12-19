@@ -5,6 +5,12 @@ import { setupSwagger } from '@app/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(TransactionServiceModule);
   
+  // Enable CORS
+  app.enableCors({
+    origin: true, // Allow all origins in development
+    credentials: true,
+  });
+  
   // Setup Swagger documentation
   setupSwagger(app, {
     title: 'Transaction Service API',
