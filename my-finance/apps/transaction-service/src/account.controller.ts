@@ -6,6 +6,7 @@ import {
   ApiBearerAuth
 } from '@nestjs/swagger';
 import { AccountService } from './account.service';
+import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
 
 @ApiTags('Account')
 @ApiBearerAuth('access-token')
@@ -28,10 +29,10 @@ export class AccountController {
       }
     }
   })
-  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
   async getBalance(@Req() req) {
-    const userId = req.headers['x-user-id'];
-    if (!userId) throw new UnauthorizedException();
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new UnauthorizedException('Missing or invalid JWT token');
 
     return this.accountService.getBalance(userId);
   }

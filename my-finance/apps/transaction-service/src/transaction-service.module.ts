@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TransactionServiceController } from './transaction-service.controller';
 import { TransactionServiceService } from './transaction-service.service';
@@ -12,6 +12,11 @@ import { AccountEntity } from './entities/account.entity';
 import { AccountController } from './account.controller';
 import { AccountService } from './account.service';
 import { JwtExtractMiddleware } from '@app/common';
+import { HttpModule } from '@nestjs/axios';
+import { MlClientService } from './ml-client/ml-client.service';
+import { GroupExpenseModule } from './group-expense/group-expense.module';
+import { GroupExpense } from './group-expense/entities/group-expense.entity';
+import { GroupExpenseShare } from './group-expense/entities/group-expense-share.entity';
 
 
 @Module({
@@ -25,7 +30,7 @@ import { JwtExtractMiddleware } from '@app/common';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [AccountEntity, TransactionEntity],
+        entities: [AccountEntity, TransactionEntity, GroupExpense, GroupExpenseShare],
         synchronize: config.get<string>('NODE_ENV') !== 'production',
         logging: config.get<string>('NODE_ENV') === 'development',
       }),
@@ -36,9 +41,15 @@ import { JwtExtractMiddleware } from '@app/common';
       queue: 'report_queue',
     }),
     AuthCommonModule,
+    HttpModule.register({
+      timeout: 5000,
+      maxRedirects: 5,
+    }),
+    forwardRef(() => GroupExpenseModule),
   ],
   controllers: [TransactionServiceController, AccountController],
-  providers: [TransactionServiceService, AccountService],
+  providers: [TransactionServiceService, AccountService, MlClientService],
+  exports: [TransactionServiceService], // Export for GroupExpenseModule
 })
 export class TransactionServiceModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

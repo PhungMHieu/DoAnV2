@@ -28,4 +28,16 @@ export class GroupExpenseShare {
   // Số tiền mà member này phải chịu (sau khi tính từ kiểu split)
   @Column('numeric', { precision: 18, scale: 2 })
   amount: string;
+
+  // Settlement tracking
+  @Column({ type: 'boolean', default: false })
+  @Index()
+  isPaid: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  paidAt: Date | null;
+
+  // Denormalized userId for faster settlement processing
+  @Column({ type: 'varchar', nullable: true })
+  userId: string | null;
 }

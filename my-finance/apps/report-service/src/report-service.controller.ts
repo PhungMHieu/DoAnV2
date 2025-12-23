@@ -8,7 +8,8 @@ import {
   ApiParam
 } from '@nestjs/swagger';
 import { ReportServiceService } from './report-service.service';
-
+import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
+import type { Request } from 'express';
 @ApiTags('Reports')
 @ApiBearerAuth('access-token')
 @Controller()
@@ -16,9 +17,9 @@ export class ReportServiceController {
   constructor(private readonly reportService: ReportServiceService) {}
 
   private getUserId(req: Request): string {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = getUserIdFromRequest(req);
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
     return userId;
   }

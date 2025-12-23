@@ -48,9 +48,11 @@ export class TransactionServiceService {
     this.reportClient.emit('transaction.created', {
       userId,
       transactionId: savedTx.id,
-      amount: savedTx.amount,
-      category: savedTx.category,
-      dateTime: savedTx.dateTime,
+      after: {
+        amount: savedTx.amount,
+        category: savedTx.category,
+        dateTime: savedTx.dateTime,
+      },
     });
 
     return savedTx;
@@ -126,9 +128,11 @@ export class TransactionServiceService {
     this.reportClient.emit('transaction.deleted', {
       userId,
       transactionId: id,
-      amount: tx.amount,
-      category: tx.category,
-      dateTime: tx.dateTime,
+      before: {
+        amount: tx.amount,
+        category: tx.category,
+        dateTime: tx.dateTime,
+      },
     });
 
     return { message: 'Deleted successfully' };

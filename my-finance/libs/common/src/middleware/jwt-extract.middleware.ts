@@ -3,6 +3,42 @@ import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
 
 /**
+ * Utility function to extract user ID directly from JWT token
+ * @param authHeader Authorization header (Bearer token)
+ * @returns User ID (sub claim) or null if not found
+ */
+export function extractUserIdFromToken(authHeader: string | undefined): string | null {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  try {
+    const decoded = jwt.decode(token) as { sub?: string; email?: string };
+    return decoded?.sub || null;
+  } catch (error) {
+    console.warn('Failed to decode JWT:', error);
+    return null;
+  }
+}
+
+/**
+ * Utility function to extract user ID from request object
+ * @param req Express request object
+ * @returns User ID or null
+ */
+export function getUserIdFromRequest(req: Request): string | null {
+  // First check if x-user-id already exists in headers
+  const existingUserId = req.headers['x-user-id'] as string;
+  if (existingUserId) {
+    return existingUserId;
+  }
+
+  // Extract from Authorization header
+  return extractUserIdFromToken(req.headers['authorization']);
+}
+
+/**
  * Middleware to extract user ID from JWT token
  * Used when Kong has already validated the JWT
  * This middleware extracts the 'sub' claim and sets it as x-user-id header
@@ -15,20 +51,10 @@ export class JwtExtractMiddleware implements NestMiddleware {
       return next();
     }
 
-    // Try to extract from Authorization header
-    const authHeader = req.headers['authorization'];
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        // Decode without verification (Kong already verified)
-        const decoded = jwt.decode(token) as { sub?: string; email?: string };
-        if (decoded && decoded.sub) {
-          req.headers['x-user-id'] = decoded.sub;
-        }
-      } catch (error) {
-        // Token decode failed, continue without x-user-id
-        console.warn('Failed to decode JWT:', error.message);
-      }
+    // Extract user ID and set as header
+    const userId = extractUserIdFromToken(req.headers['authorization']);
+    if (userId) {
+      req.headers['x-user-id'] = userId;
     }
 
     next();

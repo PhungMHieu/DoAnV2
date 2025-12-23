@@ -81,6 +81,28 @@ services:
       - my-finance-network
     restart: unless-stopped
 
+  # ML Service
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: my-finance-ml
+    command: ["node", "dist/apps/ml-service/main"]
+    environment:
+      - NODE_ENV=production
+      - ML_SERVICE_PORT=3005
+    ports:
+      - "3005:3005"
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3005/api", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Transaction Service
   transaction-service:
     build:
@@ -90,11 +112,13 @@ services:
     container_name: my-finance-transaction
     command: ["node", "dist/apps/transaction-service/main"]
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - TRANSACTION_SERVICE_PORT=3001
       - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
       - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
       - RABBITMQ_QUEUE_PREFIX=myfinance
+      - ML_SERVICE_URL=http://ml-service:3005
+      - GROUP_SERVICE_URL=http://group-service:3004
     ports:
       - "3001:3001"
     depends_on:
@@ -102,6 +126,10 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      ml-service:
+        condition: service_started
+      group-service:
+        condition: service_started
     networks:
       - my-finance-network
     restart: unless-stopped
@@ -147,7 +175,7 @@ services:
     container_name: my-finance-group
     command: ["node", "dist/apps/group-service/main"]
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - GROUP_SERVICE_PORT=3004
       - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
@@ -175,6 +203,7 @@ services:
       - TRANSACTION_SERVICE_URL=http://transaction-service:3001
       - REPORT_SERVICE_URL=http://report-service:3003
       - GROUP_SERVICE_URL=http://group-service:3004
+      - ML_SERVICE_URL=http://ml-service:3005
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
     ports:
       - "3000:3000"
@@ -186,6 +215,8 @@ services:
       report-service:
         condition: service_started
       group-service:
+        condition: service_started
+      ml-service:
         condition: service_started
     networks:
       - my-finance-network

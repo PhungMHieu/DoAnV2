@@ -55,6 +55,15 @@
         "tsConfigPath": "apps/group-service/tsconfig.app.json"
       }
     },
+    "ml-service": {
+      "type": "application",
+      "root": "apps/ml-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/ml-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/ml-service/tsconfig.app.json"
+      }
+    },
     "my-finance": {
       "type": "application",
       "root": "apps/my-finance",

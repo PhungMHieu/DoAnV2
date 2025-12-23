@@ -8,41 +8,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { TransactionEventDto } from './dto';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
-
-// ===== Event payloads khớp với transaction-service =====
-
-interface TransactionCreatedEvent {
-  userId: string;
-  transactionId: string;
-  amount: number;
-  category: string;
-  dateTime: string | Date;
-}
-
-interface TransactionUpdatedEvent {
-  userId: string;
-  transactionId: string;
-  before: {
-    amount: number;
-    category: string;
-    dateTime: string | Date;
-  };
-  after: {
-    amount: number;
-    category: string;
-    dateTime: string | Date;
-  };
-}
-
-interface TransactionDeletedEvent {
-  userId: string;
-  transactionId: string;
-  amount: number;
-  category: string;
-  dateTime: string | Date;
-}
 
 @Injectable()
 export class ReportServiceService {
@@ -120,56 +88,52 @@ export class ReportServiceService {
     }
   }
 
-  // ========== EVENT HANDLERS (called from controller) ==========
+  // ========== EVENT HANDLERS ==========
 
-  async handleCreated(payload: TransactionCreatedEvent) {
-    this.logger.debug(
-      `Received transaction.created ${payload.transactionId} for user ${payload.userId}`,
-    );
-
+  async handleCreated(payload: TransactionEventDto) {
+    this.logger.debug(`transaction.created ${payload.transactionId}`);
+    const { after } = payload;
+    if (!after) return;
     await this.applyTransactionDelta(
       payload.userId,
-      new Date(payload.dateTime),
-      payload.amount,
-      payload.category,
+      new Date(after.dateTime),
+      after.amount,
+      after.category,
       1,
     );
   }
 
-  async handleUpdated(payload: TransactionUpdatedEvent) {
-    this.logger.debug(
-      `Received transaction.updated ${payload.transactionId} for user ${payload.userId}`,
-    );
-
-    // rollback old
+  async handleUpdated(payload: TransactionEventDto) {
+    this.logger.debug(`transaction.updated ${payload.transactionId}`);
+    const { before, after } = payload;
+    if (!before || !after) return;
+    // Rollback old
     await this.applyTransactionDelta(
       payload.userId,
-      new Date(payload.before.dateTime),
-      payload.before.amount,
-      payload.before.category,
+      new Date(before.dateTime),
+      before.amount,
+      before.category,
       -1,
     );
-
-    // apply new
+    // Apply new
     await this.applyTransactionDelta(
       payload.userId,
-      new Date(payload.after.dateTime),
-      payload.after.amount,
-      payload.after.category,
+      new Date(after.dateTime),
+      after.amount,
+      after.category,
       1,
     );
   }
 
-  async handleDeleted(payload: TransactionDeletedEvent) {
-    this.logger.debug(
-      `Received transaction.deleted ${payload.transactionId} for user ${payload.userId}`,
-    );
-
+  async handleDeleted(payload: TransactionEventDto) {
+    this.logger.debug(`transaction.deleted ${payload.transactionId}`);
+    const { before } = payload;
+    if (!before) return;
     await this.applyTransactionDelta(
       payload.userId,
-      new Date(payload.dateTime),
-      payload.amount,
-      payload.category,
+      new Date(before.dateTime),
+      before.amount,
+      before.category,
       -1,
     );
   }

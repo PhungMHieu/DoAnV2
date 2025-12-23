@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { GroupExpense } from './entities/group-expense.entity';
 import { GroupExpenseShare } from './entities/group-expense-share.entity';
+import { TransactionServiceService } from '../transaction-service.service';
+import { GroupClientService } from './group-client.service';
 
 type SplitType = 'equal' | 'exact' | 'percent';
 
@@ -14,6 +16,8 @@ export class GroupExpenseService {
     @InjectRepository(GroupExpenseShare)
     private readonly shareRepo: Repository<GroupExpenseShare>,
     private readonly dataSource: DataSource,
+    private readonly transactionServiceService: TransactionServiceService,
+    private readonly groupClientService: GroupClientService,
   ) {}
 
   // ========== PUBLIC ==========
@@ -184,6 +188,166 @@ export class GroupExpenseService {
     return exp;
   }
 
+  /**
+   * Get all debts for a specific member in a group
+   * Returns expenses where this member owes money (share amount > 0 AND member didn't pay)
+   */
+  async getMyDebts(groupId: string, memberId: string) {
+    // Find all shares for this member in this group's expenses
+    const shares = await this.shareRepo.find({
+      where: { memberId },
+      relations: ['expense'],
+    });
+
+    // Filter to only expenses in this group where member owes money
+    const debts = shares
+      .filter((share) => {
+        const expense = share.expense;
+        // Must be in the specified group
+        if (expense.groupId !== groupId) return false;
+        // Member owes if they have a share AND they are not the payer
+        if (expense.paidByMemberId === memberId) return false;
+        // Filter out paid shares
+        if (share.isPaid) return false;
+        return true;
+      })
+      .map((share) => ({
+        shareId: share.id, // Add shareId for mark-paid
+        expenseId: share.expenseId,
+        expenseTitle: share.expense.title,
+        totalAmount: share.expense.amount,
+        myShare: share.amount,
+        paidByMemberId: share.expense.paidByMemberId,
+        createdAt: share.expense.createdAt,
+        splitType: share.expense.splitType,
+        isPaid: share.isPaid, // Include status
+      }));
+
+    return debts;
+  }
+
+  /**
+   * Mark a share as paid and create settlement transactions for both parties
+   * Only the payer can mark shares as paid
+   */
+  async markShareAsPaid(shareId: string, currentMemberId: number, groupId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const shareRepo = manager.getRepository(GroupExpenseShare);
+
+      // 1. Find the share with expense relation
+      const share = await shareRepo.findOne({
+        where: { id: shareId },
+        relations: ['expense', 'expense.shares'],
+      });
+
+      if (!share) throw new NotFoundException('Share not found');
+      if (share.isPaid) throw new BadRequestException('Already paid');
+
+      const expense = share.expense;
+
+      // Verify share belongs to this group
+      if (expense.groupId !== groupId) {
+        throw new BadRequestException('Share does not belong to this group');
+      }
+
+      // 2. Verify current user is the PAYER (only payer can mark as paid)
+      if (expense.paidByMemberId !== String(currentMemberId)) {
+        throw new ForbiddenException('Only the payer can mark debts as paid');
+      }
+
+      // 3. Check if both parties have userId set
+      if (!share.userId) {
+        throw new BadRequestException('Debtor has not joined the group yet');
+      }
+
+      // Get payer's userId from shares (payer has a share too)
+      const payerShare = expense.shares.find(
+        (s) => s.memberId === expense.paidByMemberId
+      );
+      if (!payerShare?.userId) {
+        throw new BadRequestException('Payer userId not found');
+      }
+
+      const debtorUserId = share.userId;
+      const payerUserId = payerShare.userId;
+
+      // 4. Update share status
+      share.isPaid = true;
+      share.paidAt = new Date();
+      await shareRepo.save(share);
+
+      // 5. Create transaction for DEBTOR (expense)
+      const debtorTx = await this.transactionServiceService.createTransaction(
+        debtorUserId,
+        {
+          amount: parseFloat(share.amount),
+          category: 'Group Settlement',
+          note: `Paid for: ${expense.title}`,
+          dateTime: new Date(),
+        } as any,
+      );
+
+      // 6. Create transaction for PAYER (income)
+      const payerTx = await this.transactionServiceService.createTransaction(
+        payerUserId,
+        {
+          amount: parseFloat(share.amount),
+          category: 'Income',
+          note: `Received payment for: ${expense.title}`,
+          dateTime: new Date(),
+        } as any,
+      );
+
+      return {
+        shareId: share.id,
+        isPaid: share.isPaid,
+        paidAt: share.paidAt,
+        debtorTransactionId: debtorTx.id,
+        payerTransactionId: payerTx.id,
+      };
+    });
+  }
+
+  /**
+   * Get all debts owed to current member (who owes me money)
+   */
+  async getOwedToMe(groupId: string, memberId: string) {
+    // Find all expenses in this group where current user is the payer
+    const expenses = await this.expenseRepo.find({
+      where: {
+        groupId,
+        paidByMemberId: memberId,
+      },
+      relations: ['shares'],
+    });
+
+    // Collect unpaid shares from other members
+    const debts: any[] = [];
+
+    for (const expense of expenses) {
+      const unpaidShares = expense.shares.filter(
+        (share) =>
+          share.memberId !== memberId && // Not self
+          !share.isPaid // Not paid yet
+      );
+
+      for (const share of unpaidShares) {
+        debts.push({
+          shareId: share.id,
+          expenseId: expense.id,
+          expenseTitle: expense.title,
+          totalAmount: expense.amount,
+          shareAmount: share.amount,
+          debtorMemberId: share.memberId,
+          createdAt: expense.createdAt,
+          isPaid: share.isPaid,
+        });
+      }
+    }
+
+    return debts;
+  }
+
   // ========== PRIVATE HELPERS ==========
 
   private async persistExpenseWithShares(input: {
@@ -218,12 +382,29 @@ export class GroupExpenseService {
 
       const savedExpense = await manager.save(expense);
 
-      const shares = sharesCents.map((s) =>
-        manager.create(GroupExpenseShare, {
-          expenseId: savedExpense.id,
-          memberId: s.memberId,
-          amount: this.fromCents(s.cents),
-        }),
+      // Fetch userId for each memberId and create shares
+      const shares = await Promise.all(
+        sharesCents.map(async (s) => {
+          // Fetch userId for this memberId
+          let memberUserId: string | null = null;
+          try {
+            memberUserId = await this.groupClientService.getUserIdFromMemberId(
+              groupId,
+              parseInt(s.memberId)
+            );
+          } catch (error) {
+            // Member hasn't joined yet, userId will be null
+            console.warn(`Member ${s.memberId} has not joined yet`);
+          }
+
+          return manager.create(GroupExpenseShare, {
+            expenseId: savedExpense.id,
+            memberId: s.memberId,
+            amount: this.fromCents(s.cents),
+            userId: memberUserId,
+            isPaid: s.memberId === paidByMemberId, // Auto-mark payer's share as paid
+          });
+        })
       );
 
       await manager.save(shares);

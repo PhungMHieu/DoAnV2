@@ -114,10 +114,37 @@ export class GroupServiceService {
     // lấy tất cả group mà có member.userId = userId
     const members = await this.groupMemberRepository.find({
       where: { userId },
-      relations: ['group'],
+      relations: ['group', 'group.members'], // Load cả members của group
     });
 
     return members.map((m) => m.group);
+  }
+
+  async getMemberByUserIdAndGroupId(userId: string, groupId: string): Promise<GroupMember> {
+    const member = await this.groupMemberRepository.findOne({
+      where: {
+        userId,
+        group: { id: groupId },
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException('You are not a member of this group');
+    }
+
+    return member;
+  }
+
+  async getMemberById(memberId: string): Promise<GroupMember> {
+    const member = await this.groupMemberRepository.findOne({
+      where: { id: parseInt(memberId) },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found');
+    }
+
+    return member;
   }
 
   private generateGroupCode(): string {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { 
   ApiTags, 
   ApiOperation, 
@@ -86,13 +86,13 @@ export class AuthServiceController {
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() user: User) {
-    return this.authServiceService.validateUser(user.username, user.password)
-      .then(user => {
-        if (!user) {
-          throw new Error('Invalid credentials');
-        }
-        return this.authServiceService.login(user);
-      });
+    const validatedUser = await this.authServiceService.validateUser(user.username, user.password);
+
+    if (!validatedUser) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return this.authServiceService.login(validatedUser);
   }
 
   @Post('logout')

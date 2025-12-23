@@ -41,12 +41,23 @@ export class AuthServiceService {
   }
 
   async validateUser(username: string, password: string): Promise<User | null> {
+    console.log(`[Auth] Attempting login for username: ${username}`);
+
     const user = await this.userRepository.findOne({ where: { username } });
-    if (!user) return null;
+    if (!user) {
+      console.log(`[Auth] ❌ User not found: ${username}`);
+      return null;
+    }
+
+    console.log(`[Auth] ✅ User found: ${username} (id: ${user.id})`);
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return null;
+    if (!isMatch) {
+      console.log(`[Auth] ❌ Password mismatch for user: ${username}`);
+      return null;
+    }
 
+    console.log(`[Auth] ✅ Password matched for user: ${username}`);
     delete (user as any).password;
     return user;
   }

@@ -1,7 +1,9 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { GroupServiceService } from './group-service.service';
-
+import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
+import { CreateGroupDto, JoinGroupDto } from './dto';
+import type { Request } from 'express';
 @ApiTags('Groups')
 @ApiBearerAuth('access-token')
 @Controller()
@@ -9,35 +11,9 @@ export class GroupServiceController {
    constructor(private readonly groupsService: GroupServiceService) {}
 
   @Post()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Create a new group',
-    description: 'Creates a new group with the specified name, owner name, and member names. Requires x-user-id header for authentication.'
-  })
-  @ApiBody({
-    description: 'Group creation data',
-    schema: {
-      type: 'object',
-      properties: {
-        name: { 
-          type: 'string', 
-          example: 'Family Budget Group',
-          description: 'Name of the group (required, non-empty string)'
-        },
-        ownerName: {
-          type: 'string',
-          example: 'Admin User',
-          description: 'Display name of the group owner/creator (required, non-empty string)'
-        },
-        memberNames: { 
-          type: 'array', 
-          items: { type: 'string' },
-          example: ['John Doe', 'Jane Smith', 'Bob Wilson'],
-          description: 'Array of member names to add to the group (required, non-empty array of non-empty strings)',
-          minItems: 1
-        }
-      },
-      required: ['name', 'ownerName', 'memberNames']
-    }
+    description: 'Creates a new group with the specified name, owner name, and member names. Requires JWT authentication.'
   })
   @ApiResponse({
     status: 201,
@@ -53,23 +29,23 @@ export class GroupServiceController {
       }
     }
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: 'Bad Request - Invalid input data',
     schema: {
       type: 'object',
       properties: {
-        message: { 
-          type: 'string', 
+        message: {
+          type: 'string',
           example: 'name is required'
         },
         statusCode: { type: 'number', example: 400 }
       }
     }
   })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized - Missing or invalid x-user-id header',
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing or invalid JWT token',
     schema: {
       type: 'object',
       properties: {
@@ -78,31 +54,15 @@ export class GroupServiceController {
       }
     }
   })
-  async createGroup(@Body() body: any, @Req() req: Request) {
-    const userId = req.headers['x-user-id'] as string;
-
-    const name = body?.name;
-    const ownerName = body?.ownerName;
-    const memberNames = body?.memberNames;
-
-    if (typeof name !== 'string' || !name.trim()) {
-      throw new BadRequestException('name is required');
-    }
-    if (typeof ownerName !== 'string' || !ownerName.trim()) {
-      throw new BadRequestException('ownerName is required');
-    }
-    if (!Array.isArray(memberNames) || memberNames.length === 0) {
-      throw new BadRequestException('memberNames must be a non-empty array');
-    }
-    if (memberNames.some((x) => typeof x !== 'string' || !x.trim())) {
-      throw new BadRequestException('memberNames must be array of non-empty strings');
-    }
+  async createGroup(@Body() dto: CreateGroupDto, @Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
     return this.groupsService.createGroup(
-      userId, 
-      name.trim(), 
-      ownerName.trim(),
-      memberNames.map((x) => x.trim())
+      userId,
+      dto.name.trim(),
+      dto.ownerName.trim(),
+      dto.memberNames.map((x) => x.trim())
     );
   }
 
@@ -160,28 +120,9 @@ export class GroupServiceController {
   }
 
   @Post('join')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Join a group',
     description: 'Join an existing group using group code and member ID'
-  })
-  @ApiBody({
-    description: 'Join group data',
-    schema: {
-      type: 'object',
-      properties: {
-        groupCode: { 
-          type: 'string', 
-          example: 'ABC123',
-          description: 'Unique code of the group to join'
-        },
-        memberId: { 
-          type: 'string', 
-          example: '1',
-          description: 'ID of the member slot to occupy in the group'
-        }
-      },
-      required: ['groupCode', 'memberId']
-    }
   })
   @ApiResponse({
     status: 200,
@@ -200,21 +141,16 @@ export class GroupServiceController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data or member slot already taken' })
   @ApiResponse({ status: 404, description: 'Group or member not found' })
-  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
-  async joinGroup(@Body() body: any, @Req() req: Request) {
-    const userId = req.headers['x-user-id'] as string;
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async joinGroup(@Body() dto: JoinGroupDto, @Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
-    const groupCode = body?.groupCode;
-    const memberId = body?.memberId;
-
-    if (typeof groupCode !== 'string' || !groupCode.trim()) {
-      throw new BadRequestException('groupCode is required');
-    }
-    if (typeof memberId !== 'string' || !memberId.trim()) {
-      throw new BadRequestException('memberId is required');
-    }
-
-    const member = await this.groupsService.joinGroupByCode(groupCode.trim(), memberId.trim(), userId);
+    const member = await this.groupsService.joinGroupByCode(
+      dto.groupCode.trim(),
+      dto.memberId.trim(),
+      userId
+    );
 
     return {
       groupId: member.group?.id,
@@ -227,9 +163,9 @@ export class GroupServiceController {
   }
 
   @Get('my')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get my groups',
-    description: 'Retrieves all groups that the current user is a member of'
+    description: 'Retrieves all groups that the current user is a member of, including member count'
   })
   @ApiResponse({
     status: 200,
@@ -241,15 +177,84 @@ export class GroupServiceController {
         properties: {
           id: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
           name: { type: 'string', example: 'Family Budget Group' },
-          code: { type: 'string', example: 'ABC123' }
+          code: { type: 'string', example: 'ABC123' },
+          memberCount: { type: 'number', example: 5, description: 'Total number of members (joined + not joined)' },
+          joinedMemberCount: { type: 'number', example: 3, description: 'Number of members who have joined' }
         }
       }
     }
   })
-  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
   async getMyGroups(@Req() req: Request) {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
     const groups = await this.groupsService.getGroupsOfUser(userId);
-    return groups.map((g) => ({ id: g.id, name: g.name, code: g.code }));
+    return groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      code: g.code,
+      memberCount: g.members?.length || 0,
+      joinedMemberCount: g.members?.filter((m) => m.joined).length || 0,
+    }));
+  }
+
+  @Get(':groupId/my-member-id')
+  @ApiOperation({
+    summary: 'Get my member ID in a group',
+    description: 'Returns the member ID for the current user in the specified group'
+  })
+  @ApiParam({
+    name: 'groupId',
+    description: 'Group ID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Member ID retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        memberId: { type: 'number', example: 1 },
+        name: { type: 'string', example: 'John' },
+        joined: { type: 'boolean', example: true }
+      }
+    }
+  })
+  @ApiResponse({ status: 404, description: 'Member not found in this group' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async getMyMemberId(@Param('groupId') groupId: string, @Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    const member = await this.groupsService.getMemberByUserIdAndGroupId(userId, groupId);
+
+    return {
+      memberId: member.id,
+      name: member.name,
+      joined: member.joined,
+    };
+  }
+
+  @Get('members/:memberId/user-id')
+  @ApiOperation({
+    summary: 'Get userId for a member',
+    description: 'Returns the userId associated with a member ID (null if not joined)'
+  })
+  @ApiParam({ name: 'memberId', description: 'Member ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'UserId retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', nullable: true, example: 'user-123' }
+      }
+    }
+  })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  async getUserIdByMemberId(@Param('memberId') memberId: string) {
+    const member = await this.groupsService.getMemberById(memberId);
+    return { userId: member.userId };
   }
 }

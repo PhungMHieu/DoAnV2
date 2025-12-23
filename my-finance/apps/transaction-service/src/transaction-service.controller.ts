@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
+import type { Request } from 'express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
   ApiQuery,
   ApiParam,
   ApiBearerAuth,
@@ -10,12 +11,18 @@ import {
 } from '@nestjs/swagger';
 import { TransactionServiceService } from './transaction-service.service';
 import { TransactionEntity } from './entities/transaction.entity';
+import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
+import { MlClientService } from './ml-client/ml-client.service';
 
 @ApiTags('Transactions')
 @ApiBearerAuth('access-token')
 @Controller()
 export class TransactionServiceController {
-  constructor(private readonly transactionServiceService: TransactionServiceService) {}
+  constructor(
+    private readonly transactionServiceService: TransactionServiceService,
+    private readonly mlClientService: MlClientService,
+  ) {}
   @Get('months')
   @ApiOperation({ 
     summary: 'Get available months',
@@ -32,10 +39,10 @@ export class TransactionServiceController {
   })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
   async getAvailableMonths(@Req() req): Promise<string[]> {
-    const userId = req.headers['x-user-id']; // 👈 lấy id từ header
+    const userId = getUserIdFromRequest(req); // 👈 lấy trực tiếp từ token
 
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
     return await this.transactionServiceService.getAvailableMonthsByUser(userId);
@@ -62,11 +69,11 @@ export class TransactionServiceController {
     @Req() req: Request,
     @Query('monthYear') monthYear?: string,
   ): Promise<TransactionEntity[]> {
-    // Lấy userId từ header do API Gateway gắn vào
-    const userId = req.headers['x-user-id'] as string;
+    // Lấy userId trực tiếp từ JWT token
+    const userId = getUserIdFromRequest(req);
 
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
     // Chỉ trả về transaction của đúng user đó
@@ -75,42 +82,127 @@ export class TransactionServiceController {
 
   // 🟩 Thêm mới transaction
   @Post()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Create transaction',
-    description: 'Creates a new transaction for the user'
+    description:
+      'Creates a new transaction for the user.\n\n' +
+      '**AI Amount Extraction behavior:**\n' +
+      '- If `amount` IS provided → Uses user\'s value (extraction will NOT run)\n' +
+      '- If `amount` is NOT provided BUT `note` exists → AI extracts amount from Vietnamese text\n' +
+      '- Supports: plain numbers (50000), k notation (50k), Vietnamese words (50 nghìn, 1.5 triệu)\n' +
+      '- If extraction fails → Defaults to 0\n\n' +
+      '**AI Auto-categorization behavior:**\n' +
+      '- If `category` IS provided → Uses user\'s choice (AI will NOT override)\n' +
+      '- If `category` is NOT provided BUT `note` exists → AI auto-predicts category\n' +
+      '- If both missing → Defaults to "other"\n\n' +
+      '**Examples:**\n' +
+      '1. Text-only input: `{note: "ăn phở 50k", type: "EXPENSE", dateTime: "..."}` → Extracts amount: 50000, predicts category: "food"\n' +
+      '2. User provides amount: `{amount: 50000, note: "lunch", type: "EXPENSE"}` → Uses 50000, predicts category\n' +
+      '3. User provides both: `{amount: 50000, category: "food", note: "lunch"}` → Uses both user values',
   })
   @ApiBody({
-    description: 'Transaction data',
-    type: TransactionEntity,
-    schema: {
-      type: 'object',
-      properties: {
-        amount: { type: 'number', example: 50000 },
-        category: { type: 'string', example: 'food' },
-        note: { type: 'string', example: 'Lunch with colleagues' },
-        dateTime: { type: 'string', format: 'date-time', example: '2024-12-09T12:00:00Z' }
-      },
-      required: ['amount', 'category', 'dateTime']
-    }
+    description:
+      'Transaction data. Amount and category are optional - AI will extract/predict if not provided.',
+    type: CreateTransactionDto,
   })
   @ApiResponse({
     status: 201,
     description: 'Transaction created successfully',
-    type: TransactionEntity
+    type: TransactionEntity,
   })
-  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
   async create(
     @Req() req: Request,
-    @Body() body: TransactionEntity, // không dùng DTO nên nhận luôn entity
+    @Body() body: CreateTransactionDto,
   ): Promise<TransactionEntity> {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = getUserIdFromRequest(req);
 
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
-    // service sẽ tự gán userId vào entity trước khi save
-    return this.transactionServiceService.createTransaction(userId, body);
+    // 🔢 Amount Extraction Logic:
+    // Extract amount from Vietnamese text if not provided
+    if (!body.amount && body.note && body.note.trim().length > 0) {
+      try {
+        const extraction = await this.mlClientService.extractAmount(body.note);
+
+        if (extraction.amount > 0) {
+          body.amount = extraction.amount;
+          console.log(
+            `[Amount Extraction] ✅ Extracted ${extraction.amount} from: "${body.note}" (method: ${extraction.method}, confidence: ${(extraction.confidence * 100).toFixed(1)}%)`,
+          );
+        } else {
+          // Fallback to 0 when extraction fails
+          body.amount = 0;
+          console.log(
+            `[Amount Extraction] ⚠️  No amount found in: "${body.note}", using default 0`,
+          );
+        }
+      } catch (error) {
+        console.error('[Amount Extraction] ❌ Failed:', error.message);
+        body.amount = 0; // Fallback
+      }
+    }
+
+    // Validate amount exists after extraction
+    if (body.amount === undefined || body.amount === null) {
+      body.amount = 0;
+      console.log('[Amount Extraction] Using default amount: 0');
+    }
+
+    // 🤖 AI Auto-categorization Logic:
+    // CRITICAL: Chỉ gọi AI nếu user KHÔNG tự chọn category
+    // → Tôn trọng lựa chọn của người dùng!
+    if (!body.category && body.note && body.note.trim().length > 0) {
+      try {
+        const prediction = await this.mlClientService.predictCategory(
+          body.note,
+          body.amount,
+        );
+
+        // Chỉ auto-fill nếu confidence đủ cao (≥ 0.5)
+        if (prediction.confidence >= 0.5) {
+          body.category = prediction.category;
+          console.log(
+            `[AI Auto-categorization] ✅ Predicted "${prediction.category}" with ${(prediction.confidence * 100).toFixed(1)}% confidence for: "${body.note}"`,
+          );
+        } else {
+          // Confidence thấp → fallback
+          body.category = 'other';
+          console.log(
+            `[AI Auto-categorization] ⚠️  Low confidence (${(prediction.confidence * 100).toFixed(1)}%), using fallback "other"`,
+          );
+        }
+      } catch (error) {
+        // Nếu ML service fail → fallback
+        console.error('[AI Auto-categorization] ❌ Failed:', error.message);
+        body.category = 'other';
+      }
+    } else if (body.category) {
+      // User đã chọn category → KHÔNG override
+      console.log(
+        `[User choice] 👤 User manually selected category: "${body.category}"`,
+      );
+    }
+
+    // Final fallback nếu vẫn không có category
+    if (!body.category) {
+      body.category = 'other';
+      console.log('[Default fallback] Using "other" category');
+    }
+
+    // Tạo transaction entity từ DTO
+    const transaction: TransactionEntity = {
+      amount: body.amount,
+      category: body.category,
+      note: body.note,
+      dateTime: body.dateTime,
+      userId, // Được gán từ JWT token
+    } as TransactionEntity;
+
+    return this.transactionServiceService.createTransaction(userId, transaction);
   }
 
   // 🟨 Sửa transaction theo id
@@ -148,10 +240,10 @@ export class TransactionServiceController {
     @Param('id') id: string,
     @Body() body: Partial<TransactionEntity>, // cho phép update một phần
   ): Promise<TransactionEntity> {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = getUserIdFromRequest(req);
 
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
     return this.transactionServiceService.updateTransaction(id, userId, body as TransactionEntity);
@@ -184,12 +276,68 @@ export class TransactionServiceController {
     @Req() req: Request,
     @Param('id') id: string,
   ): Promise<{ message: string }> {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = getUserIdFromRequest(req);
 
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
     return this.transactionServiceService.deleteWithUser(id, userId);
+  }
+
+  // 🤖 AI-powered category prediction
+  @Post('predict-category')
+  @ApiOperation({
+    summary: 'Predict transaction category using AI',
+    description: 'Uses machine learning to predict the most suitable category based on transaction description',
+  })
+  @ApiBody({
+    description: 'Transaction details for prediction',
+    schema: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', example: 'Mua cơm trưa quán Phở 24' },
+        amount: { type: 'number', example: 50000 },
+      },
+      required: ['note'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Category predicted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', example: 'food' },
+        confidence: { type: 'number', example: 0.85 },
+        suggestions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', example: 'food' },
+              confidence: { type: 'number', example: 0.85 },
+            },
+          },
+          example: [
+            { category: 'food', confidence: 0.85 },
+            { category: 'entertainment', confidence: 0.10 },
+            { category: 'other', confidence: 0.05 },
+          ],
+        },
+        model: { type: 'string', example: 'keyword-matcher-v1' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  async predictCategory(
+    @Body() body: { note: string; amount?: number },
+  ): Promise<{
+    category: string;
+    confidence: number;
+    suggestions: Array<{ category: string; confidence: number }>;
+    model: string;
+  }> {
+    return this.mlClientService.predictCategory(body.note, body.amount);
   }
 }
