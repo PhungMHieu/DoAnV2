@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GroupExpenseService } from './group-expense.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
@@ -45,6 +45,11 @@ export class GroupExpenseController {
         throw new BadRequestException('participantMemberIds cannot contain only empty strings');
       }
 
+      // Validate paidByMemberId is in participantMemberIds
+      if (!participantMemberIds.includes(paidByMemberId)) {
+        throw new BadRequestException('paidByMemberId must be included in participantMemberIds');
+      }
+
       return this.groupExpenseService.createExpenseEqualSplit({
         groupId,
         title: dto.title.trim(),
@@ -52,6 +57,7 @@ export class GroupExpenseController {
         paidByMemberId,
         participantMemberIds,
         createdByUserId: userId,
+        category: dto.category,
       });
     }
 
@@ -59,6 +65,13 @@ export class GroupExpenseController {
       if (!dto.exactSplits || dto.exactSplits.length === 0) {
         throw new BadRequestException('exactSplits is required for exact split type');
       }
+
+      // Validate paidByMemberId is in exactSplits
+      const splitMemberIds = dto.exactSplits.map((s) => s.memberId.trim());
+      if (!splitMemberIds.includes(paidByMemberId)) {
+        throw new BadRequestException('paidByMemberId must be included in exactSplits');
+      }
+
       return this.groupExpenseService.createExpenseExactSplit(
         groupId,
         {
@@ -67,6 +80,7 @@ export class GroupExpenseController {
           paidByMemberId,
           splitType: dto.splitType,
           splits: dto.exactSplits,
+          category: dto.category,
         },
         userId,
       );
@@ -76,6 +90,13 @@ export class GroupExpenseController {
     if (!dto.percentSplits || dto.percentSplits.length === 0) {
       throw new BadRequestException('percentSplits is required for percent split type');
     }
+
+    // Validate paidByMemberId is in percentSplits
+    const percentMemberIds = dto.percentSplits.map((s) => s.memberId.trim());
+    if (!percentMemberIds.includes(paidByMemberId)) {
+      throw new BadRequestException('paidByMemberId must be included in percentSplits');
+    }
+
     return this.groupExpenseService.createExpensePercentSplit(
       groupId,
       {
@@ -84,6 +105,7 @@ export class GroupExpenseController {
         paidByMemberId,
         splitType: dto.splitType,
         splits: dto.percentSplits,
+        category: dto.category,
       },
       userId,
     );
@@ -131,6 +153,70 @@ export class GroupExpenseController {
 
     // Get debts for this member
     return this.groupExpenseService.getMyDebts(groupId, String(memberId));
+  }
+
+  @Get('payment-history')
+  @ApiOperation({
+    summary: 'Get payment history (paid/received) for current user in a month',
+    description: 'Returns list of payments made and received by current user in the specified month'
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiQuery({
+    name: 'monthYear',
+    required: true,
+    description: 'Month and year in format MM/YYYY',
+    example: '12/2025'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment history',
+    schema: {
+      type: 'object',
+      properties: {
+        month: { type: 'string', example: '12/2025' },
+        payments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              date: { type: 'string', format: 'date-time' },
+              type: { type: 'string', enum: ['paid', 'received'] },
+              amount: { type: 'number', example: 300 },
+              expenseTitle: { type: 'string', example: 'Dinner' },
+              category: { type: 'string', example: 'food' },
+              from: { type: 'string', example: 'Nam', description: 'Only for received type' },
+              note: { type: 'string', example: 'Đã thanh toán cho nhóm' },
+            },
+          },
+        },
+        summary: {
+          type: 'object',
+          properties: {
+            totalPaid: { type: 'number', example: 300 },
+            totalReceived: { type: 'number', example: 200 },
+            net: { type: 'number', example: -100, description: 'Positive = received more, Negative = paid more' },
+          },
+        },
+      },
+    },
+  })
+  async getPaymentHistory(
+    @Param('groupId') groupId: string,
+    @Query('monthYear') monthYear: string,
+    @Req() req: Request
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    if (!monthYear) {
+      throw new BadRequestException('monthYear query parameter is required (format: MM/YYYY)');
+    }
+
+    // Get member ID from group-service
+    const authHeader = req.headers.authorization || '';
+    const memberId = await this.groupClientService.getMyMemberId(groupId, authHeader);
+
+    return this.groupExpenseService.getPaymentHistory(groupId, String(memberId), monthYear);
   }
 
   @Post('mark-paid')

@@ -22,7 +22,7 @@ export class TransactionServiceService {
     }
 
   async createTransaction(userId: string, data: TransactionEntity) {
-  return await this.dataSource.transaction(async (manager) => {
+  const savedTx = await this.dataSource.transaction(async (manager) => {
     const txRepo = manager.getRepository(TransactionEntity);
     const accountRepo = manager.getRepository(AccountEntity);
 
@@ -44,24 +44,30 @@ export class TransactionServiceService {
       { balance: () => `balance + ${delta}` },
     );
 
-    // 4. Emit event cho report-service
-    this.reportClient.emit('transaction.created', {
-      userId,
-      transactionId: savedTx.id,
-      after: {
-        amount: savedTx.amount,
-        category: savedTx.category,
-        dateTime: savedTx.dateTime,
-      },
-    });
-
     return savedTx;
   });
+
+  // 4. Emit event cho report-service (AFTER transaction committed)
+  this.reportClient.emit('transaction.created', {
+    userId,
+    transactionId: savedTx.id,
+    after: {
+      amount: savedTx.amount,
+      category: savedTx.category,
+      dateTime: savedTx.dateTime,
+    },
+  });
+
+  return savedTx;
 }
 
 
   async updateTransaction(id: string, userId: string, data: TransactionEntity) {
-  return await this.dataSource.transaction(async (manager) => {
+  // Store old transaction data before starting transaction
+  const oldTxData = await this.transactionRepository.findOne({ where: { id, userId } });
+  if (!oldTxData) throw new NotFoundException('Transaction not found');
+
+  const updatedTx = await this.dataSource.transaction(async (manager) => {
     const txRepo = manager.getRepository(TransactionEntity);
     const accountRepo = manager.getRepository(AccountEntity);
 
@@ -85,23 +91,26 @@ export class TransactionServiceService {
       { balance: () => `balance + ${totalDelta}` },
     );
 
-    this.reportClient.emit('transaction.updated', {
-      userId,
-      transactionId: updatedTx.id,
-      before: {
-        amount: oldTx.amount,
-        category: oldTx.category,
-        dateTime: oldTx.dateTime,
-      },
-      after: {
-        amount: updatedTx.amount,
-        category: updatedTx.category,
-        dateTime: updatedTx.dateTime,
-      },
-    });
-
     return updatedTx;
   });
+
+  // Emit event AFTER transaction committed
+  this.reportClient.emit('transaction.updated', {
+    userId,
+    transactionId: updatedTx.id,
+    before: {
+      amount: oldTxData.amount,
+      category: oldTxData.category,
+      dateTime: oldTxData.dateTime,
+    },
+    after: {
+      amount: updatedTx.amount,
+      category: updatedTx.category,
+      dateTime: updatedTx.dateTime,
+    },
+  });
+
+  return updatedTx;
 }
 
 
@@ -109,7 +118,11 @@ export class TransactionServiceService {
    * Delete transaction with user verification
    */
  async deleteWithUser(id: string, userId: string) {
-  return await this.dataSource.transaction(async (manager) => {
+  // Store transaction data before deletion
+  const txToDelete = await this.transactionRepository.findOne({ where: { id, userId } });
+  if (!txToDelete) throw new NotFoundException('Transaction not found');
+
+  await this.dataSource.transaction(async (manager) => {
     const txRepo = manager.getRepository(TransactionEntity);
     const accountRepo = manager.getRepository(AccountEntity);
 
@@ -124,19 +137,20 @@ export class TransactionServiceService {
       { userId },
       { balance: () => `balance - ${delta}` },
     );
-
-    this.reportClient.emit('transaction.deleted', {
-      userId,
-      transactionId: id,
-      before: {
-        amount: tx.amount,
-        category: tx.category,
-        dateTime: tx.dateTime,
-      },
-    });
-
-    return { message: 'Deleted successfully' };
   });
+
+  // Emit event AFTER transaction committed
+  this.reportClient.emit('transaction.deleted', {
+    userId,
+    transactionId: id,
+    before: {
+      amount: txToDelete.amount,
+      category: txToDelete.category,
+      dateTime: txToDelete.dateTime,
+    },
+  });
+
+  return { message: 'Deleted successfully' };
 }
 
 

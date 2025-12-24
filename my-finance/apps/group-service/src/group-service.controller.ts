@@ -61,8 +61,7 @@ export class GroupServiceController {
     return this.groupsService.createGroup(
       userId,
       dto.name.trim(),
-      dto.ownerName.trim(),
-      dto.memberNames.map((x) => x.trim())
+      dto.ownerName.trim()
     );
   }
 
@@ -122,7 +121,7 @@ export class GroupServiceController {
   @Post('join')
   @ApiOperation({
     summary: 'Join a group',
-    description: 'Join an existing group using group code and member ID'
+    description: 'Join an existing group using group code and your display name'
   })
   @ApiResponse({
     status: 200,
@@ -132,24 +131,24 @@ export class GroupServiceController {
       properties: {
         groupId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
         memberId: { type: 'number', example: 1 },
-        name: { type: 'string', example: 'John' },
+        name: { type: 'string', example: 'Alice' },
         userId: { type: 'string', example: 'user-123' },
         joined: { type: 'boolean', example: true },
         joinedAt: { type: 'string', format: 'date-time', example: '2024-12-09T12:00:00Z' }
       }
     }
   })
-  @ApiResponse({ status: 400, description: 'Invalid input data or member slot already taken' })
-  @ApiResponse({ status: 404, description: 'Group or member not found' })
+  @ApiResponse({ status: 400, description: 'Invalid input data or already joined this group' })
+  @ApiResponse({ status: 404, description: 'Group not found' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
   async joinGroup(@Body() dto: JoinGroupDto, @Req() req: Request) {
     const userId = getUserIdFromRequest(req);
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
-    const member = await this.groupsService.joinGroupByCode(
+    const member = await this.groupsService.joinGroup(
+      userId,
       dto.groupCode.trim(),
-      dto.memberId.trim(),
-      userId
+      dto.memberName.trim()
     );
 
     return {
@@ -256,5 +255,44 @@ export class GroupServiceController {
   async getUserIdByMemberId(@Param('memberId') memberId: string) {
     const member = await this.groupsService.getMemberById(memberId);
     return { userId: member.userId };
+  }
+
+  @Get(':groupId/members/:memberId')
+  @ApiOperation({
+    summary: 'Get member info by member ID',
+    description: 'Returns member information including id, name, and userId'
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiParam({ name: 'memberId', description: 'Member ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Member info retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', example: 1 },
+        name: { type: 'string', example: 'Nam' },
+        userId: { type: 'string', nullable: true, example: 'user-123' }
+      }
+    }
+  })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  async getMemberInfo(
+    @Param('groupId') groupId: string,
+    @Param('memberId') memberId: string
+  ) {
+    // Get member with group relation to verify groupId
+    const member = await this.groupsService.getMemberByIdWithGroup(memberId);
+
+    // Verify member belongs to this group
+    if (member.group.id !== groupId) {
+      throw new Error('Member does not belong to this group');
+    }
+
+    return {
+      id: member.id,
+      name: member.name,
+      userId: member.userId,
+    };
   }
 }

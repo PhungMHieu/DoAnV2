@@ -5,6 +5,8 @@ import { ReportServiceService } from './report-service.service';
 import { RedisCommonModule } from '@app/redis-common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtExtractMiddleware } from '@app/common';
+import { HttpModule } from '@nestjs/axios';
+import { TransactionClientService } from './transaction-client.service';
 
 @Module({
   imports: [
@@ -12,19 +14,13 @@ import { JwtExtractMiddleware } from '@app/common';
       isGlobal: true,
     }),
     RedisCommonModule,
-    // HttpModule.registerAsync({
-    //   imports: [ConfigModule],
-    //   inject: [ConfigService],
-    //   useFactory: (config: ConfigService) => ({
-    //     baseURL:
-    //       config.get<string>('TRANSACTION_SERVICE_URL') ||
-    //       'http://transaction-service:3001',
-    //     timeout: config.get<number>('HTTP_TIMEOUT') || 3000,
-    //   }),
-    // }),
+    HttpModule.register({
+      timeout: 5000,
+      maxRedirects: 5,
+    }),
   ],
   controllers: [ReportServiceController, ReportEventController],
-  providers: [ReportServiceService],
+  providers: [ReportServiceService, TransactionClientService],
 })
 export class ReportServiceModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

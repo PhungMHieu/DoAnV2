@@ -1,6 +1,6 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/GroupMember.entity';
 
@@ -17,7 +17,6 @@ export class GroupServiceService {
     createdByUserId: string,
     name: string,
     ownerName: string,
-    memberNames: string[]
   ): Promise<Group> {
     const group = this.groupRepository.create({
       name,
@@ -30,49 +29,46 @@ export class GroupServiceService {
     // Tạo member cho owner (người tạo) - đã join sẵn
     const ownerMember = this.groupMemberRepository.create({
       name: ownerName,
-      group: savedGroup,  // Sử dụng relation object thay vì groupId
+      group: savedGroup,
       userId: createdByUserId,
       joined: true,
       joinedAt: new Date(),
     });
 
-    // Tạo các member khác (chưa join)
-    const otherMembers = memberNames.map((memberName) => {
-      return this.groupMemberRepository.create({
-        name: memberName,
-        group: savedGroup,  // Sử dụng relation object thay vì groupId
-      });
-    });
-
-    // Lưu tất cả members (owner + others)
-    await this.groupMemberRepository.save([ownerMember, ...otherMembers]);
+    await this.groupMemberRepository.save(ownerMember);
 
     // Trả về group với members
     return this.getGroupByCode(savedGroup.code);
   }
 
-  async joinGroup(userId: string, groupCode: string): Promise<GroupMember> {
+  async joinGroup(userId: string, groupCode: string, memberName: string): Promise<GroupMember> {
     const group = await this.groupRepository.findOne({
       where: { code: groupCode },
     });
 
     if (!group) {
-      throw new Error('Group not found');
+      throw new NotFoundException('Group not found');
     }
 
-    const groupMember = await this.groupMemberRepository.findOne({
-      where: { group: { id: group.id }, userId: IsNull() },
+    // Check if user already joined this group
+    const existingMember = await this.groupMemberRepository.findOne({
+      where: { group: { id: group.id }, userId },
     });
 
-    if (!groupMember) {
-      throw new Error('No available slots in the group');
+    if (existingMember) {
+      throw new BadRequestException('You have already joined this group');
     }
 
-    groupMember.userId = userId;
-    groupMember.joined = true;
-    groupMember.joinedAt = new Date();
+    // Create new member
+    const newMember = this.groupMemberRepository.create({
+      name: memberName,
+      group,
+      userId,
+      joined: true,
+      joinedAt: new Date(),
+    });
 
-    return this.groupMemberRepository.save(groupMember);
+    return this.groupMemberRepository.save(newMember);
   }
 
   async getGroupByCode(code: string): Promise<Group> {
@@ -84,30 +80,6 @@ export class GroupServiceService {
       throw new NotFoundException('Group not found');
     }
     return group;
-  }
-
-  async joinGroupByCode(
-    code: string,
-    memberId: string,
-    userId: string,
-  ): Promise<GroupMember> {
-    const group = await this.getGroupByCode(code);
-
-    const member = group.members.find((m) => m.id === parseInt(memberId));
-    if (!member) {
-      throw new NotFoundException('Member not found in this group');
-    }
-
-    if (member.userId && member.userId !== userId) {
-      throw new BadRequestException('This member is already linked to another user');
-    }
-
-    member.userId = userId;
-    member.joined = true;
-    member.joinedAt = new Date();
-
-    await this.groupMemberRepository.save(member);
-    return member;
   }
 
   async getGroupsOfUser(userId: string): Promise<Group[]> {
@@ -138,6 +110,19 @@ export class GroupServiceService {
   async getMemberById(memberId: string): Promise<GroupMember> {
     const member = await this.groupMemberRepository.findOne({
       where: { id: parseInt(memberId) },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found');
+    }
+
+    return member;
+  }
+
+  async getMemberByIdWithGroup(memberId: string): Promise<GroupMember> {
+    const member = await this.groupMemberRepository.findOne({
+      where: { id: parseInt(memberId) },
+      relations: ['group'],
     });
 
     if (!member) {

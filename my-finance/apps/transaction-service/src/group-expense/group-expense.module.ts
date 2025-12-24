@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { GroupExpense } from './entities/group-expense.entity';
@@ -8,7 +8,6 @@ import { GroupExpenseController } from './group-expense.controller';
 import { GroupBalanceController } from './group-balance.controller';
 import { GroupBalanceService } from './group-balance.service';
 import { GroupClientService } from './group-client.service';
-import { TransactionServiceModule } from '../transaction-service.module';
 
 @Module({
   imports: [
@@ -17,7 +16,6 @@ import { TransactionServiceModule } from '../transaction-service.module';
       timeout: 5000,
       maxRedirects: 5,
     }),
-    forwardRef(() => TransactionServiceModule), // Import parent module to access TransactionServiceService
   ],
   providers: [GroupExpenseService, GroupBalanceService, GroupClientService],
   controllers: [GroupExpenseController, GroupBalanceController],

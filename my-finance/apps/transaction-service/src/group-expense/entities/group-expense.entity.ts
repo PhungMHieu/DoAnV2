@@ -23,6 +23,9 @@ export class GroupExpense {
   @Column('numeric', { precision: 18, scale: 2 })
   amount: string;
 
+  @Column({ nullable: true })
+  category: string; // Category of the expense (e.g., "food", "transport")
+
   // Ai trả tiền – tham chiếu GroupMember.id
   @Column()
   paidByMemberId: string;

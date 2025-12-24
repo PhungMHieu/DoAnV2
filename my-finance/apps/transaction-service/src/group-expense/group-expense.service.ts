@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, Between } from 'typeorm';
 import { GroupExpense } from './entities/group-expense.entity';
 import { GroupExpenseShare } from './entities/group-expense-share.entity';
 import { TransactionServiceService } from '../transaction-service.service';
@@ -29,8 +29,9 @@ export class GroupExpenseService {
     paidByMemberId: string;
     participantMemberIds: string[];
     createdByUserId: string;
+    category?: string;
   }): Promise<GroupExpense> {
-    const { groupId, title, amount, paidByMemberId, participantMemberIds, createdByUserId } = params;
+    const { groupId, title, amount, paidByMemberId, participantMemberIds, createdByUserId, category } = params;
 
     if (!participantMemberIds?.length) {
       throw new BadRequestException('participantMemberIds cannot be empty');
@@ -56,6 +57,7 @@ export class GroupExpenseService {
       createdByUserId,
       splitType: 'equal',
       sharesCents: shares,
+      category,
     });
   }
 
@@ -70,6 +72,7 @@ export class GroupExpenseService {
     const title = this.requireString(body?.title, 'title');
     const amount = this.requirePositiveNumber(body?.amount, 'amount');
     const paidByMemberId = this.requireString(body?.paidByMemberId, 'paidByMemberId');
+    const category = body?.category; // Optional category
 
     const splits = body?.splits;
     if (!Array.isArray(splits) || splits.length === 0) {
@@ -96,6 +99,7 @@ export class GroupExpenseService {
       createdByUserId,
       splitType: 'exact',
       sharesCents,
+      category,
     });
   }
 
@@ -110,6 +114,7 @@ export class GroupExpenseService {
     const title = this.requireString(body?.title, 'title');
     const amount = this.requirePositiveNumber(body?.amount, 'amount');
     const paidByMemberId = this.requireString(body?.paidByMemberId, 'paidByMemberId');
+    const category = body?.category; // Optional category
 
     const splits = body?.splits;
     if (!Array.isArray(splits) || splits.length === 0) {
@@ -168,6 +173,7 @@ export class GroupExpenseService {
       createdByUserId,
       splitType: 'percent',
       sharesCents,
+      category,
     });
   }
 
@@ -277,11 +283,12 @@ export class GroupExpenseService {
       await shareRepo.save(share);
 
       // 5. Create transaction for DEBTOR (expense)
+      // Use expense's category if available, fallback to 'Group Settlement'
       const debtorTx = await this.transactionServiceService.createTransaction(
         debtorUserId,
         {
           amount: parseFloat(share.amount),
-          category: 'Group Settlement',
+          category: expense.category || 'Group Settlement',
           note: `Paid for: ${expense.title}`,
           dateTime: new Date(),
         } as any,
@@ -348,6 +355,104 @@ export class GroupExpenseService {
     return debts;
   }
 
+  /**
+   * Get payment history (paid/received) for a member in a month
+   */
+  async getPaymentHistory(groupId: string, memberId: string, monthYear: string) {
+    // Parse monthYear (MM/YYYY)
+    const [monthStr, yearStr] = monthYear.split('/');
+    const month = parseInt(monthStr);
+    const year = parseInt(yearStr);
+
+    if (!month || !year || month < 1 || month > 12) {
+      throw new BadRequestException('monthYear must be in format MM/YYYY');
+    }
+
+    // Get start and end of month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+    // 1. Find all expenses in this group for this month
+    const expenses = await this.expenseRepo.find({
+      where: {
+        groupId,
+        createdAt: Between(startDate, endDate),
+      },
+      relations: ['shares'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    const payments: any[] = [];
+    let totalPaid = 0;
+    let totalReceived = 0;
+
+    for (const expense of expenses) {
+      // A. Check if current user is the PAYER (đã thanh toán)
+      if (expense.paidByMemberId === memberId) {
+        payments.push({
+          date: expense.createdAt,
+          type: 'paid',
+          amount: parseFloat(expense.amount),
+          expenseId: expense.id,
+          expenseTitle: expense.title,
+          category: expense.category || 'Group Expense',
+          note: `Đã thanh toán cho nhóm`,
+        });
+        totalPaid += parseFloat(expense.amount);
+      }
+
+      // B. Check if current user RECEIVED payment (nhận tiền)
+      // → Find shares where current user is payer and share is PAID
+      if (expense.paidByMemberId === memberId) {
+        const paidShares = expense.shares.filter(
+          (s) => s.memberId !== memberId && s.isPaid
+        );
+
+        for (const share of paidShares) {
+          // Try to get member name
+          let memberName = `Member ${share.memberId}`;
+          try {
+            const member = await this.groupClientService.getMemberById(
+              groupId,
+              parseInt(share.memberId)
+            );
+            memberName = member.name || memberName;
+          } catch (error) {
+            // Ignore error, use default name
+          }
+
+          payments.push({
+            date: share.paidAt || expense.createdAt,
+            type: 'received',
+            amount: parseFloat(share.amount),
+            expenseId: expense.id,
+            expenseTitle: expense.title,
+            category: expense.category || 'Group Expense',
+            from: memberName,
+            fromMemberId: share.memberId,
+            note: `Nhận từ ${memberName}`,
+          });
+          totalReceived += parseFloat(share.amount);
+        }
+      }
+    }
+
+    // Sort by date descending
+    payments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return {
+      month: monthYear,
+      payments,
+      summary: {
+        totalPaid,
+        totalReceived,
+        net: totalReceived - totalPaid, // Positive = received more, Negative = paid more
+      },
+    };
+  }
+
   // ========== PRIVATE HELPERS ==========
 
   private async persistExpenseWithShares(input: {
@@ -357,8 +462,9 @@ export class GroupExpenseService {
     createdByUserId: string;
     splitType: SplitType;
     sharesCents: { memberId: string; cents: number }[];
+    category?: string;
   }) {
-    const { groupId, title, paidByMemberId, createdByUserId, splitType, sharesCents } = input;
+    const { groupId, title, paidByMemberId, createdByUserId, splitType, sharesCents, category } = input;
 
     // validate memberId duplicates (tuỳ bạn muốn cho phép hay không)
     const seen = new Set<string>();
@@ -378,6 +484,7 @@ export class GroupExpenseService {
         createdByUserId,
         createdAt: new Date(),
         splitType,
+        category, // Store category from frontend (optional)
       });
 
       const savedExpense = await manager.save(expense);
@@ -409,6 +516,37 @@ export class GroupExpenseService {
 
       await manager.save(shares);
       savedExpense.shares = shares;
+
+      // 🆕 Create transaction for PAYER immediately with full expense amount (negative)
+      const payerShare = shares.find((s) => s.memberId === paidByMemberId);
+      if (payerShare?.userId) {
+        try {
+          const payerAmount = Math.abs(parseFloat(this.fromCents(totalCents))); // MUST be negative (expense)
+          await this.transactionServiceService.createTransaction(
+            payerShare.userId,
+            {
+              amount: payerAmount,
+              category: category || 'Group Expense', // Use category from frontend
+              note: `Paid for group: ${title}`,
+              dateTime: new Date(),
+            } as any,
+          );
+          console.log(
+            `[Expense Creation] ✅ Created transaction for payer ${payerShare.userId} (member ${paidByMemberId}) with amount ${payerAmount}`,
+          );
+        } catch (error) {
+          console.error(
+            `[Expense Creation] ❌ Failed to create transaction for payer:`,
+            error.message,
+          );
+          // Don't fail the entire expense creation if transaction creation fails
+        }
+      } else {
+        console.warn(
+          `[Expense Creation] ⚠️  Payer member ${paidByMemberId} has not joined yet (no userId), skipping transaction creation`,
+        );
+      }
+
       return savedExpense;
     });
   }

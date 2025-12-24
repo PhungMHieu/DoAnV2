@@ -69,6 +69,13 @@ export class CreateExpenseDto {
   @IsNotEmpty({ message: 'paidByMemberId is required' })
   paidByMemberId: string;
 
+  @ApiPropertyOptional({
+    description: 'Category of the expense (e.g., food, transport, entertainment)',
+    example: 'food',
+  })
+  @IsString()
+  category?: string;
+
   @ApiProperty({
     description: 'Split type',
     enum: SplitType,

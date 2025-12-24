@@ -71,4 +71,21 @@ export class GroupClientService {
       return null;
     }
   }
+
+  /**
+   * Get member info by member ID
+   */
+  async getMemberById(groupId: string, memberId: number): Promise<{ id: number; name: string; userId: string | null }> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<{ id: number; name: string; userId: string | null }>(
+          `${this.groupServiceUrl}/${groupId}/members/${memberId}`,
+        ),
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error(`[GroupClient] Failed to get member by ID:`, error.message);
+      throw new Error(`Unable to get member: ${error.response?.data?.message || error.message}`);
+    }
+  }
 }

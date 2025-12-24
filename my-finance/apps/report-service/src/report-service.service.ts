@@ -9,17 +9,21 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { TransactionEventDto } from './dto';
+import { TransactionClientService } from './transaction-client.service';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
 
 @Injectable()
 export class ReportServiceService {
   private readonly logger = new Logger(ReportServiceService.name);
+  private cacheHits = 0;
+  private cacheMisses = 0;
 
   constructor(
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
     private readonly configService: ConfigService,
+    private readonly transactionClient: TransactionClientService,
   ) {}
 
   // ========== HELPER ==========
@@ -53,15 +57,22 @@ export class ReportServiceService {
     return `user:${userId}:month:${year}-${m}:daily`;
   }
 
-  private async applyTransactionDelta(
+  // ========== INCREMENTAL UPDATE HELPER ==========
+
+  /**
+   * Apply incremental update to cache
+   * Only updates if cache exists, otherwise skips (will rebuild on next read)
+   */
+  private async applyIncrementalUpdate(
     userId: string,
     dateTime: Date,
     amount: number,
     category: string,
-    factor: 1 | -1,
+    operation: 'add' | 'remove',
   ) {
     const type = this.detectType(category);
-    const val = factor * Number(amount);
+    const factor = operation === 'add' ? 1 : -1;
+    const val = factor * Math.abs(parseFloat(String(amount)));
 
     const month = dateTime.getMonth() + 1;
     const year = dateTime.getFullYear();
@@ -70,7 +81,7 @@ export class ReportServiceService {
     const summaryKey = this.getSummaryKey(userId, year, month);
     const dailyKey = this.getDailyKey(userId, year, month);
 
-    // đảm bảo có currency
+    // Ensure currency field exists
     const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     await this.redis.hsetnx(summaryKey, 'currency', defaultCurrency);
 
@@ -79,13 +90,13 @@ export class ReportServiceService {
     } else {
       // EXPENSE
       await this.redis.hincrbyfloat(summaryKey, 'expense:total', val);
-      await this.redis.hincrbyfloat(
-        summaryKey,
-        `category:${category}`,
-        val,
-      );
+      await this.redis.hincrbyfloat(summaryKey, `category:${category}`, val);
       await this.redis.hincrbyfloat(dailyKey, `day:${day}`, val);
     }
+
+    // Refresh TTL
+    await this.redis.expire(summaryKey, 86400); // 24 hours
+    await this.redis.expire(dailyKey, 86400);
   }
 
   // ========== EVENT HANDLERS ==========
@@ -94,48 +105,230 @@ export class ReportServiceService {
     this.logger.debug(`transaction.created ${payload.transactionId}`);
     const { after } = payload;
     if (!after) return;
-    await this.applyTransactionDelta(
-      payload.userId,
-      new Date(after.dateTime),
-      after.amount,
-      after.category,
-      1,
-    );
+
+    const dateTime = new Date(after.dateTime);
+    const month = dateTime.getMonth() + 1;
+    const year = dateTime.getFullYear();
+    const summaryKey = this.getSummaryKey(payload.userId, year, month);
+
+    try {
+      // Check if cache exists
+      const cacheExists = await this.redis.exists(summaryKey);
+
+      if (!cacheExists) {
+        // Cache doesn't exist → Skip update, will rebuild on next read
+        this.logger.log(`⏭️  [Cache Skip] Cache doesn't exist for ${summaryKey}, will rebuild on next read`);
+      } else {
+        // Cache exists → Apply incremental update
+        this.logger.log(`⚡ [Incremental Update] Updating cache ${summaryKey}`);
+        await this.applyIncrementalUpdate(
+          payload.userId,
+          dateTime,
+          after.amount,
+          after.category,
+          'add',
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(`❌ [Cache Update Failed] ${error.message}`);
+      // On error, delete cache to force rebuild
+      await this.redis.del(summaryKey);
+    }
   }
 
   async handleUpdated(payload: TransactionEventDto) {
     this.logger.debug(`transaction.updated ${payload.transactionId}`);
     const { before, after } = payload;
     if (!before || !after) return;
-    // Rollback old
-    await this.applyTransactionDelta(
-      payload.userId,
-      new Date(before.dateTime),
-      before.amount,
-      before.category,
-      -1,
-    );
-    // Apply new
-    await this.applyTransactionDelta(
-      payload.userId,
-      new Date(after.dateTime),
-      after.amount,
-      after.category,
-      1,
-    );
+
+    const beforeDate = new Date(before.dateTime);
+    const afterDate = new Date(after.dateTime);
+
+    try {
+      this.logger.log(`⚡ [Incremental Update] Transaction updated - removing old, adding new`);
+
+      // Remove old transaction from cache
+      await this.applyIncrementalUpdate(
+        payload.userId,
+        beforeDate,
+        before.amount,
+        before.category,
+        'remove',
+      );
+
+      // Add new transaction to cache
+      await this.applyIncrementalUpdate(
+        payload.userId,
+        afterDate,
+        after.amount,
+        after.category,
+        'add',
+      );
+    } catch (error: any) {
+      this.logger.error(`❌ [Cache Update Failed] ${error.message}`);
+      // On error, delete both caches to force rebuild
+      const beforeMonth = beforeDate.getMonth() + 1;
+      const beforeYear = beforeDate.getFullYear();
+      const afterMonth = afterDate.getMonth() + 1;
+      const afterYear = afterDate.getFullYear();
+
+      await this.redis.del(this.getSummaryKey(payload.userId, beforeYear, beforeMonth));
+      await this.redis.del(this.getDailyKey(payload.userId, beforeYear, beforeMonth));
+
+      if (beforeMonth !== afterMonth || beforeYear !== afterYear) {
+        await this.redis.del(this.getSummaryKey(payload.userId, afterYear, afterMonth));
+        await this.redis.del(this.getDailyKey(payload.userId, afterYear, afterMonth));
+      }
+    }
   }
 
   async handleDeleted(payload: TransactionEventDto) {
     this.logger.debug(`transaction.deleted ${payload.transactionId}`);
     const { before } = payload;
     if (!before) return;
-    await this.applyTransactionDelta(
-      payload.userId,
-      new Date(before.dateTime),
-      before.amount,
-      before.category,
-      -1,
-    );
+
+    const dateTime = new Date(before.dateTime);
+
+    try {
+      this.logger.log(`⚡ [Incremental Update] Transaction deleted - removing from cache`);
+
+      // Remove transaction from cache
+      await this.applyIncrementalUpdate(
+        payload.userId,
+        dateTime,
+        before.amount,
+        before.category,
+        'remove',
+      );
+    } catch (error: any) {
+      this.logger.error(`❌ [Cache Update Failed] ${error.message}`);
+      // On error, delete cache to force rebuild
+      const month = dateTime.getMonth() + 1;
+      const year = dateTime.getFullYear();
+      await this.redis.del(this.getSummaryKey(payload.userId, year, month));
+      await this.redis.del(this.getDailyKey(payload.userId, year, month));
+    }
+  }
+
+  // ========== CACHE-ASIDE PATTERN HELPERS ==========
+
+  /**
+   * Try to get data from Redis cache
+   * Returns null if cache miss or error
+   */
+  private async tryGetFromCache(key: string): Promise<any> {
+    try {
+      const data = await this.redis.hgetall(key);
+
+      // Check if hash has any data
+      if (Object.keys(data).length > 0) {
+        this.cacheHits++;
+        const hitRate = (this.cacheHits / (this.cacheHits + this.cacheMisses) * 100).toFixed(2);
+        this.logger.log(`✅ [Cache HIT] Redis key: ${key} | Hit rate: ${hitRate}%`);
+        return data;
+      }
+
+      this.cacheMisses++;
+      this.logger.log(`❌ [Cache MISS] Redis key: ${key} (empty hash)`);
+      return null;
+    } catch (error: any) {
+      this.cacheMisses++;
+      this.logger.warn(`⚠️  [Cache ERROR] Redis unavailable: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Try to update Redis cache
+   * Does not throw on error - just logs warning
+   */
+  private async tryUpdateCache(key: string, data: Record<string, any>, ttl?: number): Promise<void> {
+    try {
+      // Set all hash fields
+      if (Object.keys(data).length > 0) {
+        await this.redis.hset(key, data);
+
+        // Set TTL if provided
+        if (ttl) {
+          await this.redis.expire(key, ttl);
+        }
+
+        this.logger.log(`💾 [Cache UPDATE] Redis key: ${key}`);
+      }
+    } catch (error: any) {
+      this.logger.warn(`⚠️  [Cache UPDATE FAILED] ${error.message}`);
+      // Don't throw - data already returned to client
+    }
+  }
+
+  /**
+   * Aggregate transactions from raw data (SSOT fallback)
+   */
+  private aggregateTransactions(transactions: any[]): {
+    incomeTotal: number;
+    expenseTotal: number;
+    categoryBreakdown: Record<string, number>;
+  } {
+    const result = {
+      incomeTotal: 0,
+      expenseTotal: 0,
+      categoryBreakdown: {} as Record<string, number>,
+    };
+
+    for (const tx of transactions) {
+      const amount = parseFloat(tx.amount);
+      const category = tx.category;
+
+      const type = this.detectType(category);
+
+      if (type === 'INCOME') {
+        result.incomeTotal += amount;
+      } else {
+        // EXPENSE (amount is negative)
+        result.expenseTotal += Math.abs(amount);
+        result.categoryBreakdown[category] =
+          (result.categoryBreakdown[category] || 0) + Math.abs(amount);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Rebuild cache from Transaction Service (SSOT)
+   */
+  private async rebuildCacheFromSSoT(
+    userId: string,
+    monthYear: string,
+    year: number,
+    month: number,
+  ): Promise<any> {
+    this.logger.log(`🔄 [Rebuild Cache] Querying Transaction Service for ${monthYear}`);
+
+    // Query SSOT
+    const transactions = await this.transactionClient.getTransactionsByMonth(userId, monthYear);
+
+    // Aggregate locally
+    const aggregated = this.aggregateTransactions(transactions);
+
+    // Build hash data for Redis
+    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const hashData: Record<string, string> = {
+      currency: defaultCurrency,
+      'income:total': aggregated.incomeTotal.toString(),
+      'expense:total': aggregated.expenseTotal.toString(),
+    };
+
+    // Add category breakdown
+    for (const [category, amount] of Object.entries(aggregated.categoryBreakdown)) {
+      hashData[`category:${category}`] = amount.toString();
+    }
+
+    // Update cache for next time (24 hour TTL)
+    const summaryKey = this.getSummaryKey(userId, year, month);
+    await this.tryUpdateCache(summaryKey, hashData, 86400);
+
+    return hashData;
   }
 
   // ========== /transactions/summary ==========
@@ -144,8 +337,17 @@ export class ReportServiceService {
     const { month, year } = this.parseMonthYear(monthYear);
     const summaryKey = this.getSummaryKey(userId, year, month);
 
-    const hash = await this.redis.hgetall(summaryKey);
+    // ========== PATTERN: Cache-Aside with Fallback ==========
 
+    // 1️⃣ Try cache first
+    let hash = await this.tryGetFromCache(summaryKey);
+
+    // 2️⃣ Cache miss → Query SSOT and rebuild cache
+    if (!hash) {
+      hash = await this.rebuildCacheFromSSoT(userId, monthYear, year, month);
+    }
+
+    // 3️⃣ Parse and return data
     const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const currency = hash.currency || defaultCurrency;
     const incomeTotal = parseFloat(hash['income:total'] ?? '0');
@@ -155,15 +357,12 @@ export class ReportServiceService {
     for (const [field, value] of Object.entries(hash)) {
       if (field.startsWith('category:')) {
         const category = field.substring('category:'.length);
-        data[category] = parseFloat(value);
+        data[category] = parseFloat(String(value));
       }
     }
 
     // income đưa vào data như spec
     data['income'] = incomeTotal;
-
-    // balance lấy từ Account (Transaction-Service) → số dư từ lúc tạo acc
-    // const balance = await this.getAccountBalance(userId);
 
     const monthStr = month.toString().padStart(2, '0');
     const displayMonthYear = `${monthStr}/${year}`;

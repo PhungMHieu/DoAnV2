@@ -12,11 +12,11 @@ export class JoinGroupDto {
   groupCode: string;
 
   @ApiProperty({
-    description: 'ID of the member slot to occupy in the group',
-    example: '1',
+    description: 'Display name for this member in the group',
+    example: 'Alice',
     type: String,
   })
   @IsString()
-  @IsNotEmpty({ message: 'memberId is required' })
-  memberId: string;
+  @IsNotEmpty({ message: 'memberName is required' })
+  memberName: string;
 }
