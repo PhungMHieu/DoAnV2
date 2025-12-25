@@ -38,9 +38,22 @@ export class ReportServiceController {
   })
   @ApiHeader({
     name: 'X-Force-Refresh',
-    description: 'Set to "true" to bypass cache and force rebuild from database',
+    description: `Set to "true" to bypass cache and force rebuild from database.
+
+**Use cases:**
+- When you suspect cached data is stale or incorrect
+- After bulk importing transactions
+- For debugging or testing purposes
+
+**Performance note:**
+- Without header (cached): ~5ms response time
+- With X-Force-Refresh: true: ~150ms response time (rebuilds from database)`,
     required: false,
-    example: 'true'
+    schema: {
+      type: 'string',
+      enum: ['true', 'false'],
+      default: 'false'
+    }
   })
   @ApiResponse({
     status: 200,
@@ -57,15 +70,17 @@ export class ReportServiceController {
             'transport': 80000,
             'entertainment': 120000,
             'income': 1000000
-          }
+          },
+          description: 'Expense breakdown by category plus income total'
         },
         totals: {
           type: 'object',
           properties: {
-            expense: { type: 'number', example: 350000 },
-            income: { type: 'number', example: 1000000 },
-            balance: { type: 'number', example: 2500000 }
-          }
+            expense: { type: 'number', example: 350000, description: 'Total expenses for the month' },
+            income: { type: 'number', example: 1000000, description: 'Total income for the month' },
+            balance: { type: 'number', example: 650000, description: 'Net balance (income - expense)' }
+          },
+          description: 'Summary totals for the month'
         }
       }
     }
