@@ -94,9 +94,9 @@ export class ReportServiceService {
       await this.redis.hincrbyfloat(dailyKey, `day:${day}`, val);
     }
 
-    // Refresh TTL
-    await this.redis.expire(summaryKey, 86400); // 24 hours
-    await this.redis.expire(dailyKey, 86400);
+    // Refresh TTL - 2 hours (7200 seconds) for better freshness
+    await this.redis.expire(summaryKey, 7200);
+    await this.redis.expire(dailyKey, 7200);
   }
 
   // ========== EVENT HANDLERS ==========
@@ -324,30 +324,40 @@ export class ReportServiceService {
       hashData[`category:${category}`] = amount.toString();
     }
 
-    // Update cache for next time (24 hour TTL)
+    // Update cache for next time (2 hour TTL)
     const summaryKey = this.getSummaryKey(userId, year, month);
-    await this.tryUpdateCache(summaryKey, hashData, 86400);
+    await this.tryUpdateCache(summaryKey, hashData, 7200);
 
     return hashData;
   }
 
   // ========== /transactions/summary ==========
 
-  async getMonthlySummary(userId: string, monthYear: string) {
+  async getMonthlySummary(userId: string, monthYear: string, forceRefresh: boolean = false) {
     const { month, year } = this.parseMonthYear(monthYear);
     const summaryKey = this.getSummaryKey(userId, year, month);
 
     // ========== PATTERN: Cache-Aside with Fallback ==========
 
-    // 1️⃣ Try cache first
-    let hash = await this.tryGetFromCache(summaryKey);
+    let hash: Record<string, any>;
 
-    // 2️⃣ Cache miss → Query SSOT and rebuild cache
-    if (!hash) {
+    // 1️⃣ If force refresh, skip cache and rebuild from SSOT
+    if (forceRefresh) {
+      this.logger.log(`🔄 [Force Refresh] Bypassing cache for ${summaryKey}`);
+      // Delete existing cache first
+      await this.redis.del(summaryKey);
       hash = await this.rebuildCacheFromSSoT(userId, monthYear, year, month);
+    } else {
+      // 2️⃣ Try cache first
+      hash = await this.tryGetFromCache(summaryKey);
+
+      // 3️⃣ Cache miss → Query SSOT and rebuild cache
+      if (!hash) {
+        hash = await this.rebuildCacheFromSSoT(userId, monthYear, year, month);
+      }
     }
 
-    // 3️⃣ Parse and return data
+    // 4️⃣ Parse and return data
     const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const currency = hash.currency || defaultCurrency;
     const incomeTotal = parseFloat(hash['income:total'] ?? '0');
@@ -374,6 +384,7 @@ export class ReportServiceService {
       totals: {
         expense: expenseTotal,
         income: incomeTotal,
+        balance: incomeTotal - expenseTotal, // Net balance (income - expense)
       },
     };
   }
@@ -459,5 +470,77 @@ export class ReportServiceService {
       currency,
       data,
     };
+  }
+
+  // ========== ADMIN: Force Cache Rebuild ==========
+
+  async rebuildCache(userId: string, monthYear: string) {
+    const { month, year } = this.parseMonthYear(monthYear);
+    const summaryKey = this.getSummaryKey(userId, year, month);
+    const dailyKey = this.getDailyKey(userId, year, month);
+
+    this.logger.log(`🔧 [Admin] Force rebuilding cache for ${summaryKey}`);
+
+    // Delete existing cache
+    await this.redis.del(summaryKey);
+    await this.redis.del(dailyKey);
+
+    // Rebuild from SSOT
+    const transactions = await this.transactionClient.getTransactionsByMonth(userId, monthYear);
+    const aggregated = this.aggregateTransactions(transactions);
+
+    // Build hash data for Redis
+    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const hashData: Record<string, string> = {
+      currency: defaultCurrency,
+      'income:total': aggregated.incomeTotal.toString(),
+      'expense:total': aggregated.expenseTotal.toString(),
+    };
+
+    // Add category breakdown
+    for (const [category, amount] of Object.entries(aggregated.categoryBreakdown)) {
+      hashData[`category:${category}`] = amount.toString();
+    }
+
+    // Update cache (2 hour TTL)
+    await this.tryUpdateCache(summaryKey, hashData, 7200);
+
+    // Also rebuild daily cache for line chart
+    await this.rebuildDailyCache(userId, year, month, transactions);
+
+    this.logger.log(`✅ [Admin] Cache rebuilt: ${transactions.length} transactions processed`);
+
+    return {
+      transactionsProcessed: transactions.length,
+      cacheKey: summaryKey,
+    };
+  }
+
+  private async rebuildDailyCache(
+    userId: string,
+    year: number,
+    month: number,
+    transactions: any[]
+  ) {
+    const dailyKey = this.getDailyKey(userId, year, month);
+    const dailyData: Record<string, string> = {};
+
+    // Aggregate by day
+    for (const tx of transactions) {
+      const txDate = new Date(tx.dateTime);
+      const day = txDate.getDate();
+      const amount = parseFloat(tx.amount);
+
+      // Only count expenses (negative amounts)
+      if (amount < 0) {
+        const currentTotal = parseFloat(dailyData[`day:${day}`] || '0');
+        dailyData[`day:${day}`] = (currentTotal + Math.abs(amount)).toString();
+      }
+    }
+
+    // Update daily cache
+    if (Object.keys(dailyData).length > 0) {
+      await this.tryUpdateCache(dailyKey, dailyData, 7200);
+    }
   }
 }

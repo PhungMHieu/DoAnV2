@@ -1,11 +1,12 @@
-import { Controller, Get, Query, Req, UnauthorizedException } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
+import { Controller, Get, Query, Req, UnauthorizedException, Headers } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
   ApiQuery,
   ApiBearerAuth,
-  ApiParam
+  ApiParam,
+  ApiHeader
 } from '@nestjs/swagger';
 import { ReportServiceService } from './report-service.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
@@ -25,7 +26,7 @@ export class ReportServiceController {
   }
 
   @Get('transactions/summary')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get monthly transaction summary',
     description: 'Retrieves monthly summary including income, expenses by category, and account balance'
   })
@@ -34,6 +35,12 @@ export class ReportServiceController {
     description: 'Month and year in MM/YYYY format',
     example: '12/2024',
     required: true
+  })
+  @ApiHeader({
+    name: 'X-Force-Refresh',
+    description: 'Set to "true" to bypass cache and force rebuild from database',
+    required: false,
+    example: 'true'
   })
   @ApiResponse({
     status: 200,
@@ -68,9 +75,11 @@ export class ReportServiceController {
   async getSummary(
     @Req() req: Request,
     @Query('monthYear') monthYear: string,
+    @Headers('x-force-refresh') forceRefresh?: string,
   ) {
     const userId = this.getUserId(req);
-    return this.reportService.getMonthlySummary(userId, monthYear);
+    const shouldForceRefresh = forceRefresh === 'true';
+    return this.reportService.getMonthlySummary(userId, monthYear, shouldForceRefresh);
   }
 
   @Get('stats/line')
@@ -124,7 +133,7 @@ export class ReportServiceController {
   }
 
   @Get('stats/pie')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get pie chart statistics',
     description: 'Retrieves expense breakdown by category for pie chart visualization'
   })
@@ -161,5 +170,45 @@ export class ReportServiceController {
   ) {
     const userId = this.getUserId(req);
     return this.reportService.getPieStats(userId, monthYear);
+  }
+
+  @Get('admin/cache/rebuild')
+  @ApiOperation({
+    summary: '[Admin] Force rebuild cache for a user and month',
+    description: 'Deletes existing cache and rebuilds from Transaction Service (SSOT). Use this when cache is stale or corrupted.'
+  })
+  @ApiQuery({
+    name: 'monthYear',
+    description: 'Month and year in MM/YYYY format',
+    example: '12/2024',
+    required: true
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache rebuilt successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Cache rebuilt successfully' },
+        userId: { type: 'string' },
+        monthYear: { type: 'string', example: '12/2024' },
+        transactionsProcessed: { type: 'number', example: 16 }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
+  @ApiResponse({ status: 401, description: 'Missing JWT token' })
+  async rebuildCache(
+    @Req() req: Request,
+    @Query('monthYear') monthYear: string,
+  ) {
+    const userId = this.getUserId(req);
+    const result = await this.reportService.rebuildCache(userId, monthYear);
+    return {
+      message: 'Cache rebuilt successfully',
+      userId,
+      monthYear,
+      ...result
+    };
   }
 }

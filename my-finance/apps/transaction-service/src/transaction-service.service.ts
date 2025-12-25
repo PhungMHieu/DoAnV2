@@ -29,10 +29,12 @@ export class TransactionServiceService {
     // 1. Đảm bảo account tồn tại
     const account = await this.ensureAccount(userId, manager);
 
-    // 2. Tạo transaction
+    // 2. Tạo transaction (normalize amount to always be positive)
+    const normalizedAmount = Math.abs(parseFloat(String(data.amount)));
     const transaction = txRepo.create({
       ...data,
       userId,
+      amount: normalizedAmount, // Always store positive amount
     });
     const savedTx = await txRepo.save(transaction);
 

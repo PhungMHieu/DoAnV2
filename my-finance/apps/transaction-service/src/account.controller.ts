@@ -15,7 +15,7 @@ export class AccountController {
   constructor(private readonly accountService: AccountService) {}
 
   @Get('balance')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get account balance',
     description: 'Retrieves the current account balance for the user'
   })
@@ -35,5 +35,32 @@ export class AccountController {
     if (!userId) throw new UnauthorizedException('Missing or invalid JWT token');
 
     return this.accountService.getBalance(userId);
+  }
+
+  @Get('admin/recalculate-balance')
+  @ApiOperation({
+    summary: '[Admin] Recalculate account balance from transactions',
+    description: 'Fixes desync between account balance and transaction history by recalculating from all transactions'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Balance recalculated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string' },
+        oldBalance: { type: 'number', example: -27000 },
+        newBalance: { type: 'number', example: -31240 },
+        difference: { type: 'number', example: -4240 },
+        transactionsProcessed: { type: 'number', example: 17 }
+      }
+    }
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async recalculateBalance(@Req() req) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new UnauthorizedException('Missing or invalid JWT token');
+
+    return this.accountService.recalculateBalance(userId);
   }
 }
