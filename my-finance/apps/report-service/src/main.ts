@@ -31,7 +31,7 @@ async function bootstrap() {
     title: 'Report Service API',
     description: 'API for generating financial reports and statistics',
     version: '1.0',
-    path: 'docs'
+    path: 'docs',
   });
 
   const port = Number(process.env.REPORT_SERVICE_PORT || 3003);

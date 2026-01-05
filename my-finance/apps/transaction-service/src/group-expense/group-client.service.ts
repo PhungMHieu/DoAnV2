@@ -17,7 +17,9 @@ export class GroupClientService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.groupServiceUrl = this.configService.get<string>('GROUP_SERVICE_URL') || 'http://localhost:3004';
+    this.groupServiceUrl =
+      this.configService.get<string>('GROUP_SERVICE_URL') ||
+      'http://localhost:3004';
   }
 
   /**
@@ -33,7 +35,7 @@ export class GroupClientService {
           `${this.groupServiceUrl}/${groupId}/my-member-id`,
           {
             headers: {
-              'Authorization': authToken, // Pass the full Authorization header
+              Authorization: authToken, // Pass the full Authorization header
             },
           },
         ),
@@ -43,7 +45,9 @@ export class GroupClientService {
     } catch (error: any) {
       console.error(`[GroupClient] Failed to get member ID:`, error.message);
       console.error(`[GroupClient] Error details:`, error.response?.data);
-      throw new Error(`Unable to get member ID: ${error.response?.data?.message || error.message}`);
+      throw new Error(
+        `Unable to get member ID: ${error.response?.data?.message || error.message}`,
+      );
     }
   }
 
@@ -51,18 +55,28 @@ export class GroupClientService {
    * Get userId for a specific member ID
    * Returns null if member hasn't joined yet
    */
-  async getUserIdFromMemberId(groupId: string, memberId: number): Promise<string | null> {
+  async getUserIdFromMemberId(
+    groupId: string,
+    memberId: number,
+  ): Promise<string | null> {
     try {
-      console.log(`[GroupClient] Fetching userId for memberId=${memberId} from ${this.groupServiceUrl}/members/${memberId}/user-id`);
+      console.log(
+        `[GroupClient] Fetching userId for memberId=${memberId} from ${this.groupServiceUrl}/members/${memberId}/user-id`,
+      );
       const response = await firstValueFrom(
         this.httpService.get<{ userId: string | null }>(
           `${this.groupServiceUrl}/members/${memberId}/user-id`,
         ),
       );
-      console.log(`[GroupClient] Got userId: ${response.data.userId} for memberId=${memberId}`);
+      console.log(
+        `[GroupClient] Got userId: ${response.data.userId} for memberId=${memberId}`,
+      );
       return response.data.userId;
     } catch (error: any) {
-      console.error(`[GroupClient] Failed to get userId for memberId=${memberId}:`, error.message);
+      console.error(
+        `[GroupClient] Failed to get userId for memberId=${memberId}:`,
+        error.message,
+      );
       console.error(`[GroupClient] Error details:`, {
         url: `${this.groupServiceUrl}/members/${memberId}/user-id`,
         status: error.response?.status,
@@ -75,17 +89,24 @@ export class GroupClientService {
   /**
    * Get member info by member ID
    */
-  async getMemberById(groupId: string, memberId: number): Promise<{ id: number; name: string; userId: string | null }> {
+  async getMemberById(
+    groupId: string,
+    memberId: number,
+  ): Promise<{ id: number; name: string; userId: string | null }> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<{ id: number; name: string; userId: string | null }>(
-          `${this.groupServiceUrl}/${groupId}/members/${memberId}`,
-        ),
+        this.httpService.get<{
+          id: number;
+          name: string;
+          userId: string | null;
+        }>(`${this.groupServiceUrl}/${groupId}/members/${memberId}`),
       );
       return response.data;
     } catch (error: any) {
       console.error(`[GroupClient] Failed to get member by ID:`, error.message);
-      throw new Error(`Unable to get member: ${error.response?.data?.message || error.message}`);
+      throw new Error(
+        `Unable to get member: ${error.response?.data?.message || error.message}`,
+      );
     }
   }
 }

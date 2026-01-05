@@ -42,7 +42,7 @@ export class PredictCategoryResponseDto {
     description: 'Alternative suggestions with scores',
     example: [
       { category: 'food', confidence: 0.85 },
-      { category: 'entertainment', confidence: 0.10 },
+      { category: 'entertainment', confidence: 0.1 },
       { category: 'other', confidence: 0.05 },
     ],
   })

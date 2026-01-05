@@ -4,7 +4,7 @@ import { REDIS_CLIENT } from './lib/redis.constants';
 
 @Injectable()
 export class RedisCommonService implements OnModuleDestroy {
-    constructor(
+  constructor(
     @Inject(REDIS_CLIENT)
     private readonly client: Redis,
   ) {}

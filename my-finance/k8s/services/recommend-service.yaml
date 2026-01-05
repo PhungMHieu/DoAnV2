@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-models-pvc
+  namespace: my-finance
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# ML Python Service (TF-IDF + SVM)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-python
+  namespace: my-finance
+  labels:
+    app: ml-python
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-python
+  template:
+    metadata:
+      labels:
+        app: ml-python
+    spec:
+      containers:
+        - name: ml-python
+          image: my-finance/ml-python:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: ml-models
+              mountPath: /app/models
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: ml-models
+          persistentVolumeClaim:
+            claimName: ml-models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-python
+  namespace: my-finance
+spec:
+  selector:
+    app: ml-python
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP
+---
+# Recommend Service (Category Prediction)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommend-service
+  namespace: my-finance
+  labels:
+    app: recommend-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: recommend-service
+  template:
+    metadata:
+      labels:
+        app: recommend-service
+    spec:
+      containers:
+        - name: recommend-service
+          image: my-finance/ml-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/apps/ml-service/main"]
+          ports:
+            - containerPort: 3005
+          envFrom:
+            - configMapRef:
+                name: my-finance-config
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommend-service
+  namespace: my-finance
+spec:
+  selector:
+    app: recommend-service
+  ports:
+    - port: 3005
+      targetPort: 3005
+  type: ClusterIP

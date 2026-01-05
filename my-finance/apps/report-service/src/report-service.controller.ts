@@ -1,4 +1,11 @@
-import { Controller, Get, Query, Req, UnauthorizedException, Headers } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Req,
+  UnauthorizedException,
+  Headers,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,7 +13,7 @@ import {
   ApiQuery,
   ApiBearerAuth,
   ApiParam,
-  ApiHeader
+  ApiHeader,
 } from '@nestjs/swagger';
 import { ReportServiceService } from './report-service.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
@@ -28,13 +35,14 @@ export class ReportServiceController {
   @Get('transactions/summary')
   @ApiOperation({
     summary: 'Get monthly transaction summary',
-    description: 'Retrieves monthly summary including income, expenses by category, and account balance'
+    description:
+      'Retrieves monthly summary including income, expenses by category, and account balance',
   })
   @ApiQuery({
     name: 'monthYear',
     description: 'Month and year in MM/YYYY format',
     example: '12/2024',
-    required: true
+    required: true,
   })
   @ApiHeader({
     name: 'X-Force-Refresh',
@@ -52,8 +60,8 @@ export class ReportServiceController {
     schema: {
       type: 'string',
       enum: ['true', 'false'],
-      default: 'false'
-    }
+      default: 'false',
+    },
   })
   @ApiResponse({
     status: 200,
@@ -66,24 +74,36 @@ export class ReportServiceController {
         data: {
           type: 'object',
           example: {
-            'food': 150000,
-            'transport': 80000,
-            'entertainment': 120000,
-            'income': 1000000
+            food: 150000,
+            transport: 80000,
+            entertainment: 120000,
+            income: 1000000,
           },
-          description: 'Expense breakdown by category plus income total'
+          description: 'Expense breakdown by category plus income total',
         },
         totals: {
           type: 'object',
           properties: {
-            expense: { type: 'number', example: 350000, description: 'Total expenses for the month' },
-            income: { type: 'number', example: 1000000, description: 'Total income for the month' },
-            balance: { type: 'number', example: 650000, description: 'Net balance (income - expense)' }
+            expense: {
+              type: 'number',
+              example: 350000,
+              description: 'Total expenses for the month',
+            },
+            income: {
+              type: 'number',
+              example: 1000000,
+              description: 'Total income for the month',
+            },
+            balance: {
+              type: 'number',
+              example: 650000,
+              description: 'Net balance (income - expense)',
+            },
           },
-          description: 'Summary totals for the month'
-        }
-      }
-    }
+          description: 'Summary totals for the month',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
@@ -94,19 +114,24 @@ export class ReportServiceController {
   ) {
     const userId = this.getUserId(req);
     const shouldForceRefresh = forceRefresh === 'true';
-    return this.reportService.getMonthlySummary(userId, monthYear, shouldForceRefresh);
+    return this.reportService.getMonthlySummary(
+      userId,
+      monthYear,
+      shouldForceRefresh,
+    );
   }
 
   @Get('stats/line')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get line chart statistics',
-    description: 'Retrieves daily cumulative expense data for current month and previous month comparison'
+    description:
+      'Retrieves daily cumulative expense data for current month and previous month comparison',
   })
   @ApiQuery({
     name: 'monthYear',
     description: 'Month and year in MM/YYYY format',
     example: '12/2024',
-    required: true
+    required: true,
   })
   @ApiResponse({
     status: 200,
@@ -120,9 +145,9 @@ export class ReportServiceController {
             type: 'object',
             properties: {
               day: { type: 'number', example: 15 },
-              total: { type: 'number', example: 125000 }
-            }
-          }
+              total: { type: 'number', example: 125000 },
+            },
+          },
         },
         previousMonth: {
           type: 'array',
@@ -130,19 +155,16 @@ export class ReportServiceController {
             type: 'object',
             properties: {
               day: { type: 'number', example: 15 },
-              total: { type: 'number', example: 105000 }
-            }
-          }
-        }
-      }
-    }
+              total: { type: 'number', example: 105000 },
+            },
+          },
+        },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
-  async getLine(
-    @Req() req: Request,
-    @Query('monthYear') monthYear: string,
-  ) {
+  async getLine(@Req() req: Request, @Query('monthYear') monthYear: string) {
     const userId = this.getUserId(req);
     return this.reportService.getLineStats(userId, monthYear);
   }
@@ -150,13 +172,14 @@ export class ReportServiceController {
   @Get('stats/pie')
   @ApiOperation({
     summary: 'Get pie chart statistics',
-    description: 'Retrieves expense breakdown by category for pie chart visualization'
+    description:
+      'Retrieves expense breakdown by category for pie chart visualization',
   })
   @ApiQuery({
     name: 'monthYear',
     description: 'Month and year in MM/YYYY format',
     example: '12/2024',
-    required: true
+    required: true,
   })
   @ApiResponse({
     status: 200,
@@ -169,61 +192,18 @@ export class ReportServiceController {
         data: {
           type: 'object',
           example: {
-            'food': 150000,
-            'transport': 80000,
-            'entertainment': 120000
-          }
-        }
-      }
-    }
+            food: 150000,
+            transport: 80000,
+            entertainment: 120000,
+          },
+        },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
-  async getPie(
-    @Req() req: Request,
-    @Query('monthYear') monthYear: string,
-  ) {
+  async getPie(@Req() req: Request, @Query('monthYear') monthYear: string) {
     const userId = this.getUserId(req);
     return this.reportService.getPieStats(userId, monthYear);
-  }
-
-  @Get('admin/cache/rebuild')
-  @ApiOperation({
-    summary: '[Admin] Force rebuild cache for a user and month',
-    description: 'Deletes existing cache and rebuilds from Transaction Service (SSOT). Use this when cache is stale or corrupted.'
-  })
-  @ApiQuery({
-    name: 'monthYear',
-    description: 'Month and year in MM/YYYY format',
-    example: '12/2024',
-    required: true
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Cache rebuilt successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', example: 'Cache rebuilt successfully' },
-        userId: { type: 'string' },
-        monthYear: { type: 'string', example: '12/2024' },
-        transactionsProcessed: { type: 'number', example: 16 }
-      }
-    }
-  })
-  @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
-  @ApiResponse({ status: 401, description: 'Missing JWT token' })
-  async rebuildCache(
-    @Req() req: Request,
-    @Query('monthYear') monthYear: string,
-  ) {
-    const userId = this.getUserId(req);
-    const result = await this.reportService.rebuildCache(userId, monthYear);
-    return {
-      message: 'Cache rebuilt successfully',
-      userId,
-      monthYear,
-      ...result
-    };
   }
 }

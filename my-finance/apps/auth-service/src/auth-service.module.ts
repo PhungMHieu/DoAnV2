@@ -29,12 +29,12 @@ import { AuthCommonModule } from '@app/auth-common';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET') || 'default-secret-key',
-        signOptions: { 
-          expiresIn: '7d'
+        signOptions: {
+          expiresIn: '7d',
         },
       }),
     }),
-    AuthCommonModule
+    AuthCommonModule,
   ],
   controllers: [AuthServiceController],
   providers: [AuthServiceService],

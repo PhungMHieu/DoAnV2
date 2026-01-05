@@ -28,7 +28,10 @@ export class KeywordClassifierService {
     let normalized = text.toLowerCase().trim();
 
     // Loại bỏ các ký tự đặc biệt nhưng giữ dấu tiếng Việt
-    normalized = normalized.replace(/[^\w\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/gi, ' ');
+    normalized = normalized.replace(
+      /[^\w\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/gi,
+      ' ',
+    );
 
     // Loại bỏ khoảng trắng thừa
     normalized = normalized.replace(/\s+/g, ' ').trim();
@@ -84,7 +87,8 @@ export class KeywordClassifierService {
     const coverageBonus = Math.min(matchedKeywords / 5, 1); // Tối đa khi match 5+ keywords
 
     // Final score: 60% từ best match, 30% từ average, 10% từ coverage
-    const finalScore = (maxKeywordScore * 0.6) + (avgScore * 0.3) + (coverageBonus * 0.1);
+    const finalScore =
+      maxKeywordScore * 0.6 + avgScore * 0.3 + coverageBonus * 0.1;
 
     // Normalize về [0, 1]
     return Math.min(finalScore / 10, 1);
@@ -93,7 +97,10 @@ export class KeywordClassifierService {
   /**
    * Predict category từ transaction note
    */
-  predict(note: string, amount?: number): {
+  predict(
+    note: string,
+    amount?: number,
+  ): {
     category: CategoryType;
     confidence: number;
     suggestions: Array<{ category: CategoryType; confidence: number }>;
@@ -112,7 +119,7 @@ export class KeywordClassifierService {
       category,
       confidence: this.calculateCategoryScore(note, category),
     }))
-      .filter(s => s.confidence > 0) // Chỉ giữ categories có match
+      .filter((s) => s.confidence > 0) // Chỉ giữ categories có match
       .sort((a, b) => b.confidence - a.confidence); // Sort theo confidence
 
     // Nếu không có match nào
@@ -130,7 +137,7 @@ export class KeywordClassifierService {
 
     // Normalize confidences để tổng = 1
     const totalConfidence = scores.reduce((sum, s) => sum + s.confidence, 0);
-    const normalizedScores = scores.map(s => ({
+    const normalizedScores = scores.map((s) => ({
       category: s.category,
       confidence: parseFloat((s.confidence / totalConfidence).toFixed(4)),
     }));
@@ -152,9 +159,7 @@ export class KeywordClassifierService {
   /**
    * Batch prediction cho nhiều transactions
    */
-  batchPredict(
-    transactions: Array<{ note: string; amount?: number }>,
-  ): Array<{
+  batchPredict(transactions: Array<{ note: string; amount?: number }>): Array<{
     category: CategoryType;
     confidence: number;
     suggestions: Array<{ category: CategoryType; confidence: number }>;

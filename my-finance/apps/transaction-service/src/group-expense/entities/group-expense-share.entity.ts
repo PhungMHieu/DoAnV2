@@ -13,7 +13,9 @@ export class GroupExpenseShare {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => GroupExpense, (expense) => expense.shares, { onDelete: 'CASCADE' })
+  @ManyToOne(() => GroupExpense, (expense) => expense.shares, {
+    onDelete: 'CASCADE',
+  })
   expense: GroupExpense;
 
   @Column()

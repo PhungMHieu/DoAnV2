@@ -1,10 +1,21 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, Between } from 'typeorm';
 import { GroupExpense } from './entities/group-expense.entity';
 import { GroupExpenseShare } from './entities/group-expense-share.entity';
 import { TransactionServiceService } from '../transaction-service.service';
 import { GroupClientService } from './group-client.service';
+import {
+  PaymentHistoryItem,
+  PaymentHistoryResponse,
+  DebtItem,
+  OwedToMeItem,
+} from './dto';
 
 type SplitType = 'equal' | 'exact' | 'percent';
 
@@ -27,33 +38,44 @@ export class GroupExpenseService {
     title: string;
     amount: number;
     paidByMemberId: string;
-    participantMemberIds: string[];
+    paidByUserId: string;
+    participants: { memberId: string; userId: string }[];
     createdByUserId: string;
     category?: string;
   }): Promise<GroupExpense> {
-    const { groupId, title, amount, paidByMemberId, participantMemberIds, createdByUserId, category } = params;
+    const {
+      groupId,
+      title,
+      amount,
+      paidByMemberId,
+      paidByUserId,
+      participants,
+      createdByUserId,
+      category,
+    } = params;
 
-    if (!participantMemberIds?.length) {
-      throw new BadRequestException('participantMemberIds cannot be empty');
+    if (!participants?.length) {
+      throw new BadRequestException('participants cannot be empty');
     }
 
     const centsTotal = this.toCents(amount);
 
     // chia đều theo cents để không lệch
-    const n = participantMemberIds.length;
+    const n = participants.length;
     const base = Math.floor(centsTotal / n);
     let remainder = centsTotal - base * n;
 
-    const shares = participantMemberIds.map((memberId) => {
+    const shares = participants.map((p) => {
       const extra = remainder > 0 ? 1 : 0; // phân bổ phần dư
       remainder -= extra;
-      return { memberId, cents: base + extra };
+      return { memberId: p.memberId, userId: p.userId, cents: base + extra };
     });
 
     return this.persistExpenseWithShares({
       groupId,
       title,
       paidByMemberId,
+      paidByUserId,
       createdByUserId,
       splitType: 'equal',
       sharesCents: shares,
@@ -64,38 +86,59 @@ export class GroupExpenseService {
   /**
    * body expected:
    * {
-   *   title, amount, paidByMemberId, splitType:"exact",
-   *   splits:[{memberId, amount}]
+   *   title, amount, paidByMemberId, paidByUserId, splitType:"exact",
+   *   exactSplits:[{memberId, userId, amount}]
    * }
    */
-  async createExpenseExactSplit(groupId: string, body: any, createdByUserId: string) {
+  async createExpenseExactSplit(
+    groupId: string,
+    body: any,
+    createdByUserId: string,
+  ) {
     const title = this.requireString(body?.title, 'title');
     const amount = this.requirePositiveNumber(body?.amount, 'amount');
-    const paidByMemberId = this.requireString(body?.paidByMemberId, 'paidByMemberId');
-    const category = body?.category; // Optional category
+    const paidByMemberId = this.requireString(
+      body?.paidByMemberId,
+      'paidByMemberId',
+    );
+    const paidByUserId = this.requireString(body?.paidByUserId, 'paidByUserId');
+    const category = body?.category;
 
-    const splits = body?.splits;
+    const splits = body?.exactSplits;
     if (!Array.isArray(splits) || splits.length === 0) {
-      throw new BadRequestException('splits must be non-empty array');
+      throw new BadRequestException('exactSplits must be non-empty array');
     }
 
     const sharesCents = splits.map((s: any, idx: number) => {
-      const memberId = this.requireString(s?.memberId, `splits[${idx}].memberId`);
-      const shareAmount = this.requireNonNegativeNumber(s?.amount, `splits[${idx}].amount`);
-      return { memberId, cents: this.toCents(shareAmount) };
+      const memberId = this.requireString(
+        s?.memberId,
+        `exactSplits[${idx}].memberId`,
+      );
+      const userId = this.requireString(
+        s?.userId,
+        `exactSplits[${idx}].userId`,
+      );
+      const shareAmount = this.requireNonNegativeNumber(
+        s?.amount,
+        `exactSplits[${idx}].amount`,
+      );
+      return { memberId, userId, cents: this.toCents(shareAmount) };
     });
 
     const sumCents = sharesCents.reduce((acc, x) => acc + x.cents, 0);
     const totalCents = this.toCents(amount);
 
     if (sumCents !== totalCents) {
-      throw new BadRequestException(`Sum of splits (${this.fromCents(sumCents)}) must equal total amount (${amount})`);
+      throw new BadRequestException(
+        `Sum of splits (${this.fromCents(sumCents)}) must equal total amount (${amount})`,
+      );
     }
 
     return this.persistExpenseWithShares({
       groupId,
       title,
       paidByMemberId,
+      paidByUserId,
       createdByUserId,
       splitType: 'exact',
       sharesCents,
@@ -106,59 +149,80 @@ export class GroupExpenseService {
   /**
    * body expected:
    * {
-   *   title, amount, paidByMemberId, splitType:"percent",
-   *   splits:[{memberId, percent}]
+   *   title, amount, paidByMemberId, paidByUserId, splitType:"percent",
+   *   percentSplits:[{memberId, userId, percent}]
    * }
    */
-  async createExpensePercentSplit(groupId: string, body: any, createdByUserId: string) {
+  async createExpensePercentSplit(
+    groupId: string,
+    body: any,
+    createdByUserId: string,
+  ) {
     const title = this.requireString(body?.title, 'title');
     const amount = this.requirePositiveNumber(body?.amount, 'amount');
-    const paidByMemberId = this.requireString(body?.paidByMemberId, 'paidByMemberId');
-    const category = body?.category; // Optional category
+    const paidByMemberId = this.requireString(
+      body?.paidByMemberId,
+      'paidByMemberId',
+    );
+    const paidByUserId = this.requireString(body?.paidByUserId, 'paidByUserId');
+    const category = body?.category;
 
-    const splits = body?.splits;
+    const splits = body?.percentSplits;
     if (!Array.isArray(splits) || splits.length === 0) {
-      throw new BadRequestException('splits must be non-empty array');
+      throw new BadRequestException('percentSplits must be non-empty array');
     }
 
     const totalCents = this.toCents(amount);
 
     // 1) validate percent
     const raw = splits.map((s: any, idx: number) => {
-      const memberId = this.requireString(s?.memberId, `splits[${idx}].memberId`);
-      const percent = this.requireNonNegativeNumber(s?.percent, `splits[${idx}].percent`);
-      return { memberId, percent };
+      const memberId = this.requireString(
+        s?.memberId,
+        `percentSplits[${idx}].memberId`,
+      );
+      const userId = this.requireString(
+        s?.userId,
+        `percentSplits[${idx}].userId`,
+      );
+      const percent = this.requireNonNegativeNumber(
+        s?.percent,
+        `percentSplits[${idx}].percent`,
+      );
+      return { memberId, userId, percent };
     });
 
     const percentSum = raw.reduce((acc, x) => acc + x.percent, 0);
-    // cho phép sai số nhỏ do float
     if (Math.abs(percentSum - 100) > 0.0001) {
-      throw new BadRequestException(`Total percent must be 100, got ${percentSum}`);
+      throw new BadRequestException(
+        `Total percent must be 100, got ${percentSum}`,
+      );
     }
 
     // 2) tính cents theo percent, dùng largest remainder để tổng đúng
-    //    ideal = totalCents * percent / 100
     const computed = raw.map((x) => {
       const ideal = (totalCents * x.percent) / 100;
       const floor = Math.floor(ideal);
       const frac = ideal - floor;
-      return { memberId: x.memberId, floor, frac };
+      return { memberId: x.memberId, userId: x.userId, floor, frac };
     });
 
-    let used = computed.reduce((acc, x) => acc + x.floor, 0);
+    const used = computed.reduce((acc, x) => acc + x.floor, 0);
     let remain = totalCents - used;
 
     // phân bổ phần dư cho các frac lớn nhất
     computed.sort((a, b) => b.frac - a.frac);
 
-    const sharesCents = computed.map((x) => ({ memberId: x.memberId, cents: x.floor }));
+    const sharesCents = computed.map((x) => ({
+      memberId: x.memberId,
+      userId: x.userId,
+      cents: x.floor,
+    }));
 
     for (let i = 0; i < sharesCents.length && remain > 0; i++) {
       sharesCents[i].cents += 1;
       remain -= 1;
     }
 
-    // restore order không quan trọng, nhưng có thể sort lại theo memberId cho ổn định
     sharesCents.sort((a, b) => a.memberId.localeCompare(b.memberId));
 
     const finalSum = sharesCents.reduce((acc, x) => acc + x.cents, 0);
@@ -170,6 +234,7 @@ export class GroupExpenseService {
       groupId,
       title,
       paidByMemberId,
+      paidByUserId,
       createdByUserId,
       splitType: 'percent',
       sharesCents,
@@ -198,27 +263,22 @@ export class GroupExpenseService {
    * Get all debts for a specific member in a group
    * Returns expenses where this member owes money (share amount > 0 AND member didn't pay)
    */
-  async getMyDebts(groupId: string, memberId: string) {
-    // Find all shares for this member in this group's expenses
+  async getMyDebts(groupId: string, memberId: string): Promise<DebtItem[]> {
     const shares = await this.shareRepo.find({
       where: { memberId },
       relations: ['expense'],
     });
 
-    // Filter to only expenses in this group where member owes money
-    const debts = shares
+    return shares
       .filter((share) => {
         const expense = share.expense;
-        // Must be in the specified group
         if (expense.groupId !== groupId) return false;
-        // Member owes if they have a share AND they are not the payer
         if (expense.paidByMemberId === memberId) return false;
-        // Filter out paid shares
         if (share.isPaid) return false;
         return true;
       })
-      .map((share) => ({
-        shareId: share.id, // Add shareId for mark-paid
+      .map((share): DebtItem => ({
+        shareId: share.id,
         expenseId: share.expenseId,
         expenseTitle: share.expense.title,
         totalAmount: share.expense.amount,
@@ -226,17 +286,19 @@ export class GroupExpenseService {
         paidByMemberId: share.expense.paidByMemberId,
         createdAt: share.expense.createdAt,
         splitType: share.expense.splitType,
-        isPaid: share.isPaid, // Include status
+        isPaid: share.isPaid,
       }));
-
-    return debts;
   }
 
   /**
    * Mark a share as paid and create settlement transactions for both parties
    * Only the payer can mark shares as paid
    */
-  async markShareAsPaid(shareId: string, currentMemberId: number, groupId: string) {
+  async markShareAsPaid(
+    shareId: string,
+    currentMemberId: number,
+    groupId: string,
+  ) {
     return this.dataSource.transaction(async (manager) => {
       const shareRepo = manager.getRepository(GroupExpenseShare);
 
@@ -268,7 +330,7 @@ export class GroupExpenseService {
 
       // Get payer's userId from shares (payer has a share too)
       const payerShare = expense.shares.find(
-        (s) => s.memberId === expense.paidByMemberId
+        (s) => s.memberId === expense.paidByMemberId,
       );
       if (!payerShare?.userId) {
         throw new BadRequestException('Payer userId not found');
@@ -318,8 +380,7 @@ export class GroupExpenseService {
   /**
    * Get all debts owed to current member (who owes me money)
    */
-  async getOwedToMe(groupId: string, memberId: string) {
-    // Find all expenses in this group where current user is the payer
+  async getOwedToMe(groupId: string, memberId: string): Promise<OwedToMeItem[]> {
     const expenses = await this.expenseRepo.find({
       where: {
         groupId,
@@ -328,14 +389,11 @@ export class GroupExpenseService {
       relations: ['shares'],
     });
 
-    // Collect unpaid shares from other members
-    const debts: any[] = [];
+    const debts: OwedToMeItem[] = [];
 
     for (const expense of expenses) {
       const unpaidShares = expense.shares.filter(
-        (share) =>
-          share.memberId !== memberId && // Not self
-          !share.isPaid // Not paid yet
+        (share) => share.memberId !== memberId && !share.isPaid,
       );
 
       for (const share of unpaidShares) {
@@ -358,8 +416,11 @@ export class GroupExpenseService {
   /**
    * Get payment history (paid/received) for a member in a month
    */
-  async getPaymentHistory(groupId: string, memberId: string, monthYear: string) {
-    // Parse monthYear (MM/YYYY)
+  async getPaymentHistory(
+    groupId: string,
+    memberId: string,
+    monthYear: string,
+  ): Promise<PaymentHistoryResponse> {
     const [monthStr, yearStr] = monthYear.split('/');
     const month = parseInt(monthStr);
     const year = parseInt(yearStr);
@@ -368,28 +429,24 @@ export class GroupExpenseService {
       throw new BadRequestException('monthYear must be in format MM/YYYY');
     }
 
-    // Get start and end of month
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
-    // 1. Find all expenses in this group for this month
     const expenses = await this.expenseRepo.find({
       where: {
         groupId,
         createdAt: Between(startDate, endDate),
       },
       relations: ['shares'],
-      order: {
-        createdAt: 'DESC',
-      },
+      order: { createdAt: 'DESC' },
     });
 
-    const payments: any[] = [];
+    const payments: PaymentHistoryItem[] = [];
     let totalPaid = 0;
     let totalReceived = 0;
 
     for (const expense of expenses) {
-      // A. Check if current user is the PAYER (đã thanh toán)
+      // A. Current user is the PAYER
       if (expense.paidByMemberId === memberId) {
         payments.push({
           date: expense.createdAt,
@@ -398,29 +455,27 @@ export class GroupExpenseService {
           expenseId: expense.id,
           expenseTitle: expense.title,
           category: expense.category || 'Group Expense',
-          note: `Đã thanh toán cho nhóm`,
+          note: 'Đã thanh toán cho nhóm',
         });
         totalPaid += parseFloat(expense.amount);
       }
 
-      // B. Check if current user RECEIVED payment (nhận tiền)
-      // → Find shares where current user is payer and share is PAID
+      // B. Current user RECEIVED payment
       if (expense.paidByMemberId === memberId) {
         const paidShares = expense.shares.filter(
-          (s) => s.memberId !== memberId && s.isPaid
+          (s) => s.memberId !== memberId && s.isPaid,
         );
 
         for (const share of paidShares) {
-          // Try to get member name
           let memberName = `Member ${share.memberId}`;
           try {
             const member = await this.groupClientService.getMemberById(
               groupId,
-              parseInt(share.memberId)
+              parseInt(share.memberId),
             );
             memberName = member.name || memberName;
-          } catch (error) {
-            // Ignore error, use default name
+          } catch {
+            // Ignore error
           }
 
           payments.push({
@@ -437,10 +492,45 @@ export class GroupExpenseService {
           totalReceived += parseFloat(share.amount);
         }
       }
+
+      // C. Current user is DEBTOR and has paid
+      const myShare = expense.shares.find(
+        (s) =>
+          s.memberId === memberId &&
+          s.isPaid &&
+          expense.paidByMemberId !== memberId,
+      );
+
+      if (myShare) {
+        let payerName = `Member ${expense.paidByMemberId}`;
+        try {
+          const payer = await this.groupClientService.getMemberById(
+            groupId,
+            parseInt(expense.paidByMemberId),
+          );
+          payerName = payer.name || payerName;
+        } catch {
+          // Ignore error
+        }
+
+        payments.push({
+          date: myShare.paidAt || expense.createdAt,
+          type: 'paid',
+          amount: parseFloat(myShare.amount),
+          expenseId: expense.id,
+          expenseTitle: expense.title,
+          category: expense.category || 'Group Expense',
+          to: payerName,
+          toMemberId: expense.paidByMemberId,
+          note: `Đã trả cho ${payerName}`,
+        });
+        totalPaid += parseFloat(myShare.amount);
+      }
     }
 
-    // Sort by date descending
-    payments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    payments.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
 
     return {
       month: monthYear,
@@ -448,7 +538,7 @@ export class GroupExpenseService {
       summary: {
         totalPaid,
         totalReceived,
-        net: totalReceived - totalPaid, // Positive = received more, Negative = paid more
+        net: totalReceived - totalPaid,
       },
     };
   }
@@ -459,17 +549,28 @@ export class GroupExpenseService {
     groupId: string;
     title: string;
     paidByMemberId: string;
+    paidByUserId: string;
     createdByUserId: string;
     splitType: SplitType;
-    sharesCents: { memberId: string; cents: number }[];
+    sharesCents: { memberId: string; userId: string; cents: number }[];
     category?: string;
   }) {
-    const { groupId, title, paidByMemberId, createdByUserId, splitType, sharesCents, category } = input;
+    const {
+      groupId,
+      title,
+      paidByMemberId,
+      paidByUserId,
+      createdByUserId,
+      splitType,
+      sharesCents,
+      category,
+    } = input;
 
-    // validate memberId duplicates (tuỳ bạn muốn cho phép hay không)
+    // validate memberId duplicates
     const seen = new Set<string>();
     for (const s of sharesCents) {
-      if (seen.has(s.memberId)) throw new BadRequestException('Duplicate memberId in shares/splits');
+      if (seen.has(s.memberId))
+        throw new BadRequestException('Duplicate memberId in shares/splits');
       seen.add(s.memberId);
     }
 
@@ -479,72 +580,52 @@ export class GroupExpenseService {
       const expense = manager.create(GroupExpense, {
         groupId,
         title,
-        amount: this.fromCents(totalCents), // store as string numeric
+        amount: this.fromCents(totalCents),
         paidByMemberId,
         createdByUserId,
         createdAt: new Date(),
         splitType,
-        category, // Store category from frontend (optional)
+        category,
       });
 
       const savedExpense = await manager.save(expense);
 
-      // Fetch userId for each memberId and create shares
-      const shares = await Promise.all(
-        sharesCents.map(async (s) => {
-          // Fetch userId for this memberId
-          let memberUserId: string | null = null;
-          try {
-            memberUserId = await this.groupClientService.getUserIdFromMemberId(
-              groupId,
-              parseInt(s.memberId)
-            );
-          } catch (error) {
-            // Member hasn't joined yet, userId will be null
-            console.warn(`Member ${s.memberId} has not joined yet`);
-          }
-
-          return manager.create(GroupExpenseShare, {
-            expenseId: savedExpense.id,
-            memberId: s.memberId,
-            amount: this.fromCents(s.cents),
-            userId: memberUserId,
-            isPaid: s.memberId === paidByMemberId, // Auto-mark payer's share as paid
-          });
-        })
+      // Tạo shares với userId từ request (không cần lookup)
+      const shares = sharesCents.map((s) =>
+        manager.create(GroupExpenseShare, {
+          expenseId: savedExpense.id,
+          memberId: s.memberId,
+          amount: this.fromCents(s.cents),
+          userId: s.userId,
+          isPaid: s.memberId === paidByMemberId,
+        }),
       );
 
       await manager.save(shares);
       savedExpense.shares = shares;
 
-      // 🆕 Create transaction for PAYER immediately with full expense amount (negative)
-      const payerShare = shares.find((s) => s.memberId === paidByMemberId);
-      if (payerShare?.userId) {
+      // Tạo transaction cho người trả tiền
+      if (paidByUserId) {
         try {
-          const payerAmount = Math.abs(parseFloat(this.fromCents(totalCents))); // MUST be negative (expense)
+          const payerAmount = Math.abs(parseFloat(this.fromCents(totalCents)));
           await this.transactionServiceService.createTransaction(
-            payerShare.userId,
+            paidByUserId,
             {
               amount: payerAmount,
-              category: category || 'Group Expense', // Use category from frontend
+              category: category || 'Group Expense',
               note: `Paid for group: ${title}`,
               dateTime: new Date(),
             } as any,
           );
           console.log(
-            `[Expense Creation] ✅ Created transaction for payer ${payerShare.userId} (member ${paidByMemberId}) with amount ${payerAmount}`,
+            `[Expense Creation] ✅ Created transaction for payer ${paidByUserId} with amount ${payerAmount}`,
           );
         } catch (error) {
           console.error(
             `[Expense Creation] ❌ Failed to create transaction for payer:`,
             error.message,
           );
-          // Don't fail the entire expense creation if transaction creation fails
         }
-      } else {
-        console.warn(
-          `[Expense Creation] ⚠️  Payer member ${paidByMemberId} has not joined yet (no userId), skipping transaction creation`,
-        );
       }
 
       return savedExpense;

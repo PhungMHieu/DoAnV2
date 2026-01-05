@@ -70,12 +70,8 @@ export class GroupBalanceService {
    * Output: danh sách from -> to -> amount
    */
   simplify(netList: NetRecord[]): BalanceRecord[] {
-    const creditors = netList
-      .filter((m) => m.net > 0)
-      .map((m) => ({ ...m }));
-    const debtors = netList
-      .filter((m) => m.net < 0)
-      .map((m) => ({ ...m }));
+    const creditors = netList.filter((m) => m.net > 0).map((m) => ({ ...m }));
+    const debtors = netList.filter((m) => m.net < 0).map((m) => ({ ...m }));
 
     const result: BalanceRecord[] = [];
 

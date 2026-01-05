@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import {
   ApiTags,
@@ -7,7 +18,7 @@ import {
   ApiQuery,
   ApiParam,
   ApiBearerAuth,
-  ApiBody
+  ApiBody,
 } from '@nestjs/swagger';
 import { TransactionServiceService } from './transaction-service.service';
 import { TransactionEntity } from './entities/transaction.entity';
@@ -22,9 +33,9 @@ export class TransactionServiceController {
     private readonly transactionServiceService: TransactionServiceService,
   ) {}
   @Get('months')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get available months',
-    description: 'Retrieves list of months that have transactions for the user'
+    description: 'Retrieves list of months that have transactions for the user',
   })
   @ApiResponse({
     status: 200,
@@ -32,8 +43,8 @@ export class TransactionServiceController {
     schema: {
       type: 'array',
       items: { type: 'string' },
-      example: ['12/2024', '11/2024', '10/2024']
-    }
+      example: ['12/2024', '11/2024', '10/2024'],
+    },
   })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
   async getAvailableMonths(@Req() req): Promise<string[]> {
@@ -43,24 +54,27 @@ export class TransactionServiceController {
       throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
-    return await this.transactionServiceService.getAvailableMonthsByUser(userId);
+    return await this.transactionServiceService.getAvailableMonthsByUser(
+      userId,
+    );
   }
 
   @Get()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get transactions',
-    description: 'Retrieves all transactions for the user, optionally filtered by month/year'
+    description:
+      'Retrieves all transactions for the user, optionally filtered by month/year',
   })
   @ApiQuery({
     name: 'monthYear',
     description: 'Filter by month and year in MM/YYYY format',
     example: '12/2024',
-    required: false
+    required: false,
   })
   @ApiResponse({
     status: 200,
     description: 'Transactions retrieved successfully',
-    type: [TransactionEntity]
+    type: [TransactionEntity],
   })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
   async findAll(
@@ -75,7 +89,10 @@ export class TransactionServiceController {
     }
 
     // Chỉ trả về transaction của đúng user đó
-    return this.transactionServiceService.getTransactionsByUser(userId, monthYear);
+    return this.transactionServiceService.getTransactionsByUser(
+      userId,
+      monthYear,
+    );
   }
 
   // 🟩 Thêm mới transaction
@@ -85,12 +102,12 @@ export class TransactionServiceController {
     description:
       'Creates a new transaction for the user.\n\n' +
       '**AI Amount Extraction behavior:**\n' +
-      '- If `amount` IS provided → Uses user\'s value (extraction will NOT run)\n' +
+      "- If `amount` IS provided → Uses user's value (extraction will NOT run)\n" +
       '- If `amount` is NOT provided BUT `note` exists → AI extracts amount from Vietnamese text\n' +
       '- Supports: plain numbers (50000), k notation (50k), Vietnamese words (50 nghìn, 1.5 triệu)\n' +
       '- If extraction fails → Defaults to 0\n\n' +
       '**AI Auto-categorization behavior:**\n' +
-      '- If `category` IS provided → Uses user\'s choice (AI will NOT override)\n' +
+      "- If `category` IS provided → Uses user's choice (AI will NOT override)\n" +
       '- If `category` is NOT provided BUT `note` exists → AI auto-predicts category\n' +
       '- If both missing → Defaults to "other"\n\n' +
       '**Examples:**\n' +
@@ -139,19 +156,22 @@ export class TransactionServiceController {
       userId, // Được gán từ JWT token
     } as TransactionEntity;
 
-    return this.transactionServiceService.createTransaction(userId, transaction);
+    return this.transactionServiceService.createTransaction(
+      userId,
+      transaction,
+    );
   }
 
   // 🟨 Sửa transaction theo id
   @Patch(':id')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Update transaction',
-    description: 'Updates an existing transaction by ID'
+    description: 'Updates an existing transaction by ID',
   })
   @ApiParam({
     name: 'id',
     description: 'Transaction ID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiBody({
     description: 'Partial transaction data to update',
@@ -161,14 +181,14 @@ export class TransactionServiceController {
         amount: { type: 'number', example: 60000 },
         category: { type: 'string', example: 'transport' },
         note: { type: 'string', example: 'Updated note' },
-        dateTime: { type: 'string', format: 'date-time' }
-      }
-    }
+        dateTime: { type: 'string', format: 'date-time' },
+      },
+    },
   })
   @ApiResponse({
     status: 200,
     description: 'Transaction updated successfully',
-    type: TransactionEntity
+    type: TransactionEntity,
   })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
   @ApiResponse({ status: 404, description: 'Transaction not found' })
@@ -183,19 +203,23 @@ export class TransactionServiceController {
       throw new UnauthorizedException('Missing or invalid JWT token');
     }
 
-    return this.transactionServiceService.updateTransaction(id, userId, body as TransactionEntity);
+    return this.transactionServiceService.updateTransaction(
+      id,
+      userId,
+      body as TransactionEntity,
+    );
   }
 
   // 🟥 Xoá transaction theo id
   @Delete(':id')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Delete transaction',
-    description: 'Deletes an existing transaction by ID'
+    description: 'Deletes an existing transaction by ID',
   })
   @ApiParam({
     name: 'id',
     description: 'Transaction ID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
@@ -203,9 +227,12 @@ export class TransactionServiceController {
     schema: {
       type: 'object',
       properties: {
-        message: { type: 'string', example: 'Transaction deleted successfully' }
-      }
-    }
+        message: {
+          type: 'string',
+          example: 'Transaction deleted successfully',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
   @ApiResponse({ status: 404, description: 'Transaction not found' })
@@ -222,4 +249,42 @@ export class TransactionServiceController {
     return this.transactionServiceService.deleteWithUser(id, userId);
   }
 
+  @Post('analyze-and-save')
+  @ApiOperation({
+    summary: 'Analyze Vietnamese text and save transactions',
+    description:
+      'Parses Vietnamese text, extracts amounts, predicts categories, and saves transactions directly.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: {
+          type: 'string',
+          example: 'mua tạp dề 50k. ăn phở 90k và cafe 35k',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Transactions created successfully',
+    type: [TransactionEntity],
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async analyzeAndSave(
+    @Req() req: Request,
+    @Body('text') text: string,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      throw new UnauthorizedException('Missing or invalid JWT token');
+    }
+
+    return this.transactionServiceService.analyzeAndSaveTransactions(
+      userId,
+      text,
+    );
+  }
 }

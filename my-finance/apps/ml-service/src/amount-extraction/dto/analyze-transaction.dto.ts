@@ -6,7 +6,8 @@ import { IsString, IsNotEmpty } from 'class-validator';
  */
 export class AnalyzeTransactionDto {
   @ApiProperty({
-    description: 'Vietnamese text containing transaction info (amount + description)',
+    description:
+      'Vietnamese text containing transaction info (amount + description)',
     example: 'ăn phở 50k',
   })
   @IsString()

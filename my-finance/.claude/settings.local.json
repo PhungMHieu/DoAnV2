@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(kubectl cluster-info:*)",
+      "Bash(minikube status:*)",
+      "Bash(docker info:*)",
+      "Bash(brew install:*)",
+      "Bash(minikube start:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl wait:*)",
+      "Bash(minikube addons:*)",
+      "Bash(cat:*)",
+      "Bash(minikube docker-env:*)",
+      "Bash(export DOCKER_TLS_VERIFY=\"1\")",
+      "Bash(export DOCKER_HOST=\"tcp://127.0.0.1:64679\")",
+      "Bash(export DOCKER_CERT_PATH=\"/Users/admin/.minikube/certs\")",
+      "Bash(export MINIKUBE_ACTIVE_DOCKERD=\"minikube\")",
+      "Bash(docker build:*)",
+      "Bash(docker tag:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl patch:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(export DOCKER_HOST=\"tcp://127.0.0.1:51866\")",
+      "Bash(__NEW_LINE__ docker build -t my-finance/ml-service:latest --build-arg SERVICE=ml-service .)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:64679 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker build:*)",
+      "Bash(npm install:*)",
+      "Bash(kubectl rollout:*)",
+      "Bash(kubectl delete:*)"
+    ]
+  }
+}

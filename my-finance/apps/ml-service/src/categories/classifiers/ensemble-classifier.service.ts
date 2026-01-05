@@ -37,8 +37,7 @@ export class EnsembleClassifierService {
 
     // Check if PhoBERT service should be used
     this.usePhoBERT =
-      this.configService.get<string>('USE_PHOBERT') === 'true' ||
-      false;
+      this.configService.get<string>('USE_PHOBERT') === 'true' || false;
 
     this.logger.log(
       `Ensemble mode: ${this.usePhoBERT ? 'Keyword + PhoBERT' : 'Keyword only'}`,
@@ -48,7 +47,10 @@ export class EnsembleClassifierService {
   /**
    * Predict using ensemble of classifiers
    */
-  async predict(note: string, amount?: number): Promise<{
+  async predict(
+    note: string,
+    amount?: number,
+  ): Promise<{
     category: CategoryType;
     confidence: number;
     suggestions: Array<{ category: CategoryType; confidence: number }>;
@@ -109,9 +111,7 @@ export class EnsembleClassifierService {
   /**
    * Call PhoBERT service for prediction
    */
-  private async getPhoBERTPrediction(
-    note: string,
-  ): Promise<PhoBERTResponse> {
+  private async getPhoBERTPrediction(note: string): Promise<PhoBERTResponse> {
     const response = await firstValueFrom(
       this.httpService.post<PhoBERTResponse>(
         `${this.phobertServiceUrl}/predict`,
@@ -217,7 +217,10 @@ export class EnsembleClassifierService {
     }> = [];
 
     for (const transaction of transactions) {
-      const prediction = await this.predict(transaction.note, transaction.amount);
+      const prediction = await this.predict(
+        transaction.note,
+        transaction.amount,
+      );
       results.push({
         category: prediction.category,
         confidence: prediction.confidence,

@@ -28,6 +28,7 @@ RUN npm ci
 # Copy source code
 COPY apps/ ./apps/
 COPY libs/ ./libs/
+COPY proto/ ./proto/
 
 # Build stage
 FROM development AS build
@@ -38,6 +39,7 @@ RUN npm run build auth-service
 RUN npm run build transaction-service
 RUN npm run build report-service
 RUN npm run build group-service
+RUN npm run build ml-service
 
 # Production stage
 FROM node:20-alpine AS production
@@ -58,6 +60,7 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy built applications from build stage
 COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nestjs:nodejs /app/proto ./proto
 
 # Switch to non-root user
 USER nestjs

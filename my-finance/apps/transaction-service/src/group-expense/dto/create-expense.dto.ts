@@ -1,11 +1,40 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsPositive, IsEnum, IsArray, ArrayMinSize, ValidateNested, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsPositive,
+  IsEnum,
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
+  ValidateIf,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum SplitType {
   EQUAL = 'equal',
   EXACT = 'exact',
   PERCENT = 'percent',
+}
+
+// Participant với cả memberId và userId
+export class ParticipantDto {
+  @ApiProperty({
+    description: 'Member ID trong group',
+    example: 'member_123',
+  })
+  @IsString()
+  @IsNotEmpty()
+  memberId: string;
+
+  @ApiProperty({
+    description: 'User ID của member',
+    example: 'user_456',
+  })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
 }
 
 export class ExactSplitItemDto {
@@ -18,8 +47,16 @@ export class ExactSplitItemDto {
   memberId: string;
 
   @ApiProperty({
+    description: 'User ID của member',
+    example: 'user-uuid-1',
+  })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @ApiProperty({
     description: 'Amount for this member',
-    example: 200.50,
+    example: 200.5,
   })
   @IsNumber()
   @IsPositive()
@@ -34,6 +71,14 @@ export class PercentSplitItemDto {
   @IsString()
   @IsNotEmpty()
   memberId: string;
+
+  @ApiProperty({
+    description: 'User ID của member',
+    example: 'user-uuid-1',
+  })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
 
   @ApiProperty({
     description: 'Percentage for this member (0-100)',
@@ -55,7 +100,7 @@ export class CreateExpenseDto {
 
   @ApiProperty({
     description: 'Total expense amount',
-    example: 500.00,
+    example: 500.0,
   })
   @IsNumber()
   @IsPositive({ message: 'amount must be a positive number' })
@@ -63,14 +108,23 @@ export class CreateExpenseDto {
 
   @ApiProperty({
     description: 'Member ID who paid for this expense',
-    example: 'member-uuid-1',
+    example: 'member_123',
   })
   @IsString()
   @IsNotEmpty({ message: 'paidByMemberId is required' })
   paidByMemberId: string;
 
+  @ApiProperty({
+    description: 'User ID của người trả tiền',
+    example: 'user_456',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'paidByUserId is required' })
+  paidByUserId: string;
+
   @ApiPropertyOptional({
-    description: 'Category of the expense (e.g., food, transport, entertainment)',
+    description:
+      'Category of the expense (e.g., food, transport, entertainment)',
     example: 'food',
   })
   @IsString()
@@ -81,21 +135,28 @@ export class CreateExpenseDto {
     enum: SplitType,
     example: SplitType.EQUAL,
   })
-  @IsEnum(SplitType, { message: 'splitType must be one of: equal, exact, percent' })
+  @IsEnum(SplitType, {
+    message: 'splitType must be one of: equal, exact, percent',
+  })
   splitType: SplitType;
 
-  // For equal split
+  // For equal split - danh sách participants với memberId và userId
   @ApiPropertyOptional({
-    description: 'Participant member IDs (required for equal split)',
-    type: [String],
-    example: ['member-uuid-1', 'member-uuid-2', 'member-uuid-3'],
+    description: 'Participants (required for equal split)',
+    type: [ParticipantDto],
+    example: [
+      { memberId: 'member_123', userId: 'user_456' },
+      { memberId: 'member_789', userId: 'user_999' },
+    ],
   })
   @ValidateIf((o) => o.splitType === SplitType.EQUAL)
   @IsArray()
-  @ArrayMinSize(1, { message: 'participantMemberIds must be non-empty array for equal split' })
-  @IsString({ each: true })
-  @IsNotEmpty({ each: true, message: 'participantMemberIds must be array of non-empty strings' })
-  participantMemberIds?: string[];
+  @ArrayMinSize(1, {
+    message: 'participants must be non-empty array for equal split',
+  })
+  @ValidateNested({ each: true })
+  @Type(() => ParticipantDto)
+  participants?: ParticipantDto[];
 
   // For exact split
   @ApiPropertyOptional({
@@ -108,7 +169,9 @@ export class CreateExpenseDto {
   })
   @ValidateIf((o) => o.splitType === SplitType.EXACT)
   @IsArray()
-  @ArrayMinSize(1, { message: 'splits must be non-empty array for exact split' })
+  @ArrayMinSize(1, {
+    message: 'splits must be non-empty array for exact split',
+  })
   @ValidateNested({ each: true })
   @Type(() => ExactSplitItemDto)
   exactSplits?: ExactSplitItemDto[];
@@ -124,7 +187,9 @@ export class CreateExpenseDto {
   })
   @ValidateIf((o) => o.splitType === SplitType.PERCENT)
   @IsArray()
-  @ArrayMinSize(1, { message: 'splits must be non-empty array for percent split' })
+  @ArrayMinSize(1, {
+    message: 'splits must be non-empty array for percent split',
+  })
   @ValidateNested({ each: true })
   @Type(() => PercentSplitItemDto)
   percentSplits?: PercentSplitItemDto[];

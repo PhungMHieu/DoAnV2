@@ -81,7 +81,26 @@ services:
       - my-finance-network
     restart: unless-stopped
 
-  # ML Service
+  # ML Python Service (TF-IDF + SVM)
+  ml-python:
+    build:
+      context: ./apps/ml-service/python-ml
+      dockerfile: Dockerfile
+    container_name: my-finance-ml-python
+    ports:
+      - "5001:5000"
+    volumes:
+      - ml_models:/app/models
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ML Service (NestJS)
   ml-service:
     build:
       context: .
@@ -92,8 +111,13 @@ services:
     environment:
       - NODE_ENV=production
       - ML_SERVICE_PORT=3005
+      - USE_ML_MODEL=true
+      - ML_API_URL=http://ml-python:5000
     ports:
       - "3005:3005"
+    depends_on:
+      ml-python:
+        condition: service_healthy
     networks:
       - my-finance-network
     restart: unless-stopped
@@ -114,6 +138,7 @@ services:
     environment:
       - NODE_ENV=development
       - TRANSACTION_SERVICE_PORT=3001
+      - TRANSACTION_GRPC_PORT=50051
       - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
       - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
       - RABBITMQ_QUEUE_PREFIX=myfinance
@@ -121,6 +146,7 @@ services:
       - GROUP_SERVICE_URL=http://group-service:3004
     ports:
       - "3001:3001"
+      - "50051:50051"
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +175,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - TRANSACTION_SERVICE_URL=http://transaction-service:3001
+      - TRANSACTION_GRPC_URL=transaction-service:50051
       - DEFAULT_CURRENCY=VND
       - HTTP_TIMEOUT=3000
       - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
@@ -188,46 +215,7 @@ services:
       - my-finance-network
     restart: unless-stopped
 
-  # API Gateway
-  api-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-    container_name: my-finance-gateway
-    command: ["node", "dist/apps/api-gateway/main"]
-    environment:
-      - NODE_ENV=production
-      - API_GATEWAY_PORT=3000
-      - AUTH_SERVICE_URL=http://auth-service:3002
-      - TRANSACTION_SERVICE_URL=http://transaction-service:3001
-      - REPORT_SERVICE_URL=http://report-service:3003
-      - GROUP_SERVICE_URL=http://group-service:3004
-      - ML_SERVICE_URL=http://ml-service:3005
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-    ports:
-      - "3000:3000"
-    depends_on:
-      auth-service:
-        condition: service_started
-      transaction-service:
-        condition: service_started
-      report-service:
-        condition: service_started
-      group-service:
-        condition: service_started
-      ml-service:
-        condition: service_started
-    networks:
-      - my-finance-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # pgAdmin
+# pgAdmin
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: my-finance-pgadmin
@@ -314,6 +302,21 @@ services:
       timeout: 10s
       retries: 3
 
+  # RedisInsight GUI
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: my-finance-redis-insight
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis_insight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - my-finance-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     driver: local
@@ -322,6 +325,10 @@ volumes:
   rabbitmq_data:
     driver: local
   kong_data:
+    driver: local
+  ml_models:
+    driver: local
+  redis_insight_data:
     driver: local
 
 networks:

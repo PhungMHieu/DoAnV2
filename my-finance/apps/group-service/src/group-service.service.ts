@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Group } from './entities/group.entity';
@@ -11,8 +15,8 @@ export class GroupServiceService {
     private readonly groupRepository: Repository<Group>,
 
     @InjectRepository(GroupMember)
-    private readonly groupMemberRepository: Repository<GroupMember>
-  ){}
+    private readonly groupMemberRepository: Repository<GroupMember>,
+  ) {}
   async createGroup(
     createdByUserId: string,
     name: string,
@@ -41,7 +45,11 @@ export class GroupServiceService {
     return this.getGroupByCode(savedGroup.code);
   }
 
-  async joinGroup(userId: string, groupCode: string, memberName: string): Promise<GroupMember> {
+  async joinGroup(
+    userId: string,
+    groupCode: string,
+    memberName: string,
+  ): Promise<GroupMember> {
     const group = await this.groupRepository.findOne({
       where: { code: groupCode },
     });
@@ -92,7 +100,10 @@ export class GroupServiceService {
     return members.map((m) => m.group);
   }
 
-  async getMemberByUserIdAndGroupId(userId: string, groupId: string): Promise<GroupMember> {
+  async getMemberByUserIdAndGroupId(
+    userId: string,
+    groupId: string,
+  ): Promise<GroupMember> {
     const member = await this.groupMemberRepository.findOne({
       where: {
         userId,
@@ -130,6 +141,62 @@ export class GroupServiceService {
     }
 
     return member;
+  }
+
+  async leaveGroup(userId: string, groupId: string): Promise<void> {
+    const member = await this.groupMemberRepository.findOne({
+      where: { userId, group: { id: groupId } },
+      relations: ['group'],
+    });
+
+    if (!member) {
+      throw new NotFoundException('You are not a member of this group');
+    }
+
+    // Check if user is the group creator
+    if (member.group.createdByUserId === userId) {
+      throw new BadRequestException(
+        'Group creator cannot leave. Transfer ownership or delete the group instead.',
+      );
+    }
+
+    await this.groupMemberRepository.remove(member);
+  }
+
+  async addMemberToGroup(
+    groupId: string,
+    memberName: string,
+    userId?: string,
+  ): Promise<GroupMember> {
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId },
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    // If userId is provided, check if user already has a member in this group
+    if (userId) {
+      const existingMember = await this.groupMemberRepository.findOne({
+        where: { group: { id: groupId }, userId },
+      });
+
+      if (existingMember) {
+        throw new BadRequestException('User is already a member of this group');
+      }
+    }
+
+    // Create new member
+    const newMember = this.groupMemberRepository.create({
+      name: memberName,
+      group,
+      userId: userId || null,
+      joined: !!userId, // If userId provided, mark as joined
+      joinedAt: userId ? new Date() : null,
+    });
+
+    return this.groupMemberRepository.save(newMember);
   }
 
   private generateGroupCode(): string {

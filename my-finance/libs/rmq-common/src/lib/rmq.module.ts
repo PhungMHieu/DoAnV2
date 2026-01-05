@@ -4,7 +4,7 @@ import { ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 export interface RmqClientOptions {
-  name: string;   // token
+  name: string; // token
   queue: string;
 }
 

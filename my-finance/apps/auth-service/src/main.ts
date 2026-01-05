@@ -4,13 +4,13 @@ import { setupSwagger } from '@app/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AuthServiceModule);
-  
+
   // Enable CORS
   app.enableCors({
     origin: true, // Allow all origins in development
     credentials: true,
   });
-  
+
   setupSwagger(app, {
     title: 'Auth Service',
     description: 'Auth service API',

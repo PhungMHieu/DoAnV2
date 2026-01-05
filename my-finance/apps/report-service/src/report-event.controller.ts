@@ -6,7 +6,7 @@ import { TransactionEventDto } from './dto';
 @Controller()
 export class ReportEventController {
   private readonly logger = new Logger(ReportEventController.name);
-  
+
   constructor(private readonly reportService: ReportServiceService) {}
 
   @EventPattern('transaction.created')

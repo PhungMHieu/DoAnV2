@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package transaction;
+
+// Service for querying transaction statistics
+service TransactionStatsService {
+  // Get daily statistics for line chart
+  rpc GetDailyStats(DailyStatsRequest) returns (DailyStatsResponse);
+}
+
+message DailyStatsRequest {
+  string user_id = 1;
+  string start_date = 2;  // Format: YYYY-MM-DD
+  string end_date = 3;    // Format: YYYY-MM-DD
+}
+
+message DailyStatsResponse {
+  repeated DailyStat stats = 1;
+}
+
+message DailyStat {
+  string date = 1;        // Format: YYYY-MM-DD
+  double income = 2;
+  double expense = 3;
+}

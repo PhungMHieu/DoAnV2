@@ -1,24 +1,31 @@
-import { Body, Controller, Get, Post, UseGuards, UnauthorizedException } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
   ApiBody,
-  ApiBearerAuth
+  ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { AuthServiceService } from './auth-service.service';
 import { User } from './entities/User';
-import { AuthGuard } from '@nestjs/passport';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthServiceController {
   constructor(private readonly authServiceService: AuthServiceService) {}
-  
+
   @Post('register')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Register new user',
-    description: 'Creates a new user account.'
+    description: 'Creates a new user account.',
   })
   @ApiBody({
     description: 'User registration data',
@@ -27,10 +34,10 @@ export class AuthServiceController {
       properties: {
         username: { type: 'string', example: 'john_doe' },
         email: { type: 'string', example: 'john@example.com' },
-        password: { type: 'string', example: 'password123' }
+        password: { type: 'string', example: 'password123' },
       },
-      required: ['username', 'email', 'password']
-    }
+      required: ['username', 'email', 'password'],
+    },
   })
   @ApiResponse({
     status: 201,
@@ -41,19 +48,19 @@ export class AuthServiceController {
         id: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
         username: { type: 'string', example: 'john_doe' },
         email: { type: 'string', example: 'john@example.com' },
-        role: { type: 'string', example: 'user' }
-      }
-    }
+        role: { type: 'string', example: 'user' },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: 'Bad request - Invalid user data' })
   register(@Body() user: User) {
     return this.authServiceService.register(user);
   }
-  
+
   @Post('login')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'User login',
-    description: 'Authenticates user and returns JWT token'
+    description: 'Authenticates user and returns JWT token',
   })
   @ApiBody({
     description: 'Login credentials',
@@ -61,10 +68,10 @@ export class AuthServiceController {
       type: 'object',
       properties: {
         username: { type: 'string', example: 'john_doe' },
-        password: { type: 'string', example: 'password123' }
+        password: { type: 'string', example: 'password123' },
       },
-      required: ['username', 'password']
-    }
+      required: ['username', 'password'],
+    },
   })
   @ApiResponse({
     status: 200,
@@ -72,21 +79,30 @@ export class AuthServiceController {
     schema: {
       type: 'object',
       properties: {
-        access_token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+        access_token: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
         user: {
           type: 'object',
           properties: {
-            id: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+            id: {
+              type: 'string',
+              example: '123e4567-e89b-12d3-a456-426614174000',
+            },
             username: { type: 'string', example: 'john_doe' },
-            email: { type: 'string', example: 'john@example.com' }
-          }
-        }
-      }
-    }
+            email: { type: 'string', example: 'john@example.com' },
+          },
+        },
+      },
+    },
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() user: User) {
-    const validatedUser = await this.authServiceService.validateUser(user.username, user.password);
+    const validatedUser = await this.authServiceService.validateUser(
+      user.username,
+      user.password,
+    );
 
     if (!validatedUser) {
       throw new UnauthorizedException('Invalid credentials');
@@ -96,9 +112,9 @@ export class AuthServiceController {
   }
 
   @Post('logout')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'User logout',
-    description: 'Logs out the current user session'
+    description: 'Logs out the current user session',
   })
   @ApiResponse({
     status: 200,
@@ -106,11 +122,53 @@ export class AuthServiceController {
     schema: {
       type: 'object',
       properties: {
-        message: { type: 'string', example: 'Logout success' }
-      }
-    }
+        message: { type: 'string', example: 'Logout success' },
+      },
+    },
   })
   logout() {
     return { message: 'Logout success' };
+  }
+
+  @Get('users/search')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Search users',
+    description:
+      'Search users by username or email. Requires at least 2 characters.',
+  })
+  @ApiQuery({
+    name: 'q',
+    description: 'Search query (username or email)',
+    example: 'john',
+    required: true,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 10,
+    required: false,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Search results',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+          username: { type: 'string', example: 'john_doe' },
+          email: { type: 'string', example: 'john@example.com' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  })
+  async searchUsers(
+    @Query('q') query: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.authServiceService.searchUsers(query, limit || 10);
   }
 }

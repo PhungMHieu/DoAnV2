@@ -1,0 +1,79 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-finance-ingress
+  namespace: my-finance
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-user-id"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: my-finance.local
+      http:
+        paths:
+          # Auth Service (public)
+          - path: /api/auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3002
+
+          # Transaction Service
+          - path: /api/transactions(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transaction-service
+                port:
+                  number: 3001
+
+          # Account (part of transaction service)
+          - path: /api/account(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transaction-service
+                port:
+                  number: 3001
+
+          # Report Service
+          - path: /api/reports(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: report-service
+                port:
+                  number: 3003
+
+          # Group Service
+          - path: /api/groups(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: group-service
+                port:
+                  number: 3004
+
+          # ML Service
+          - path: /api/ml(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ml-service
+                port:
+                  number: 3005
+
+          # API Gateway (fallback)
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 3000

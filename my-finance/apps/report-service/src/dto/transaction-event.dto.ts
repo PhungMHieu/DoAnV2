@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsString, IsNumber, IsDateString, IsOptional, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsDateString,
+  IsOptional,
+  ValidateNested,
+} from 'class-validator';
 
 // Dữ liệu giao dịch cơ bản
 export class TransactionDataDto {

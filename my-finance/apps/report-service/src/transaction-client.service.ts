@@ -42,13 +42,10 @@ export class TransactionClientService {
       );
 
       const response = await firstValueFrom(
-        this.httpService.get<Transaction[]>(
-          `${this.transactionServiceUrl}/`,
-          {
-            params: { monthYear },
-            headers: { 'x-user-id': userId },
-          },
-        ),
+        this.httpService.get<Transaction[]>(`${this.transactionServiceUrl}/`, {
+          params: { monthYear },
+          headers: { 'x-user-id': userId },
+        }),
       );
 
       this.logger.log(

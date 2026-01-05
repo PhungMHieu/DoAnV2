@@ -7,7 +7,9 @@ import * as jwt from 'jsonwebtoken';
  * @param authHeader Authorization header (Bearer token)
  * @returns User ID (sub claim) or null if not found
  */
-export function extractUserIdFromToken(authHeader: string | undefined): string | null {
+export function extractUserIdFromToken(
+  authHeader: string | undefined,
+): string | null {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }

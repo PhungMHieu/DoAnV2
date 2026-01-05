@@ -1,5 +1,20 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GroupExpenseService } from './group-expense.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
@@ -20,7 +35,10 @@ export class GroupExpenseController {
   @ApiParam({ name: 'groupId', description: 'Group ID' })
   @ApiResponse({ status: 201, description: 'Expense created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request - validation error' })
-  @ApiResponse({ status: 401, description: 'Unauthorized - Missing or invalid JWT token' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing or invalid JWT token',
+  })
   async createExpense(
     @Param('groupId') groupId: string,
     @Body() dto: CreateExpenseDto,
@@ -36,18 +54,19 @@ export class GroupExpenseController {
     }
 
     if (dto.splitType === SplitType.EQUAL) {
-      // Validate participantMemberIds
-      if (!dto.participantMemberIds || dto.participantMemberIds.length === 0) {
-        throw new BadRequestException('participantMemberIds is required for equal split');
-      }
-      const participantMemberIds = dto.participantMemberIds.map((x) => x.trim()).filter((x) => x);
-      if (participantMemberIds.length === 0) {
-        throw new BadRequestException('participantMemberIds cannot contain only empty strings');
+      // Validate participants
+      if (!dto.participants || dto.participants.length === 0) {
+        throw new BadRequestException(
+          'participants is required for equal split',
+        );
       }
 
-      // Validate paidByMemberId is in participantMemberIds
+      // Validate paidByMemberId is in participants
+      const participantMemberIds = dto.participants.map((p) => p.memberId);
       if (!participantMemberIds.includes(paidByMemberId)) {
-        throw new BadRequestException('paidByMemberId must be included in participantMemberIds');
+        throw new BadRequestException(
+          'paidByMemberId must be included in participants',
+        );
       }
 
       return this.groupExpenseService.createExpenseEqualSplit({
@@ -55,7 +74,8 @@ export class GroupExpenseController {
         title: dto.title.trim(),
         amount: dto.amount,
         paidByMemberId,
-        participantMemberIds,
+        paidByUserId: dto.paidByUserId,
+        participants: dto.participants,
         createdByUserId: userId,
         category: dto.category,
       });
@@ -63,13 +83,17 @@ export class GroupExpenseController {
 
     if (dto.splitType === SplitType.EXACT) {
       if (!dto.exactSplits || dto.exactSplits.length === 0) {
-        throw new BadRequestException('exactSplits is required for exact split type');
+        throw new BadRequestException(
+          'exactSplits is required for exact split type',
+        );
       }
 
       // Validate paidByMemberId is in exactSplits
-      const splitMemberIds = dto.exactSplits.map((s) => s.memberId.trim());
+      const splitMemberIds = dto.exactSplits.map((s) => s.memberId);
       if (!splitMemberIds.includes(paidByMemberId)) {
-        throw new BadRequestException('paidByMemberId must be included in exactSplits');
+        throw new BadRequestException(
+          'paidByMemberId must be included in exactSplits',
+        );
       }
 
       return this.groupExpenseService.createExpenseExactSplit(
@@ -78,8 +102,8 @@ export class GroupExpenseController {
           title: dto.title.trim(),
           amount: dto.amount,
           paidByMemberId,
-          splitType: dto.splitType,
-          splits: dto.exactSplits,
+          paidByUserId: dto.paidByUserId,
+          exactSplits: dto.exactSplits,
           category: dto.category,
         },
         userId,
@@ -88,13 +112,17 @@ export class GroupExpenseController {
 
     // PERCENT
     if (!dto.percentSplits || dto.percentSplits.length === 0) {
-      throw new BadRequestException('percentSplits is required for percent split type');
+      throw new BadRequestException(
+        'percentSplits is required for percent split type',
+      );
     }
 
     // Validate paidByMemberId is in percentSplits
-    const percentMemberIds = dto.percentSplits.map((s) => s.memberId.trim());
+    const percentMemberIds = dto.percentSplits.map((s) => s.memberId);
     if (!percentMemberIds.includes(paidByMemberId)) {
-      throw new BadRequestException('paidByMemberId must be included in percentSplits');
+      throw new BadRequestException(
+        'paidByMemberId must be included in percentSplits',
+      );
     }
 
     return this.groupExpenseService.createExpensePercentSplit(
@@ -103,8 +131,8 @@ export class GroupExpenseController {
         title: dto.title.trim(),
         amount: dto.amount,
         paidByMemberId,
-        splitType: dto.splitType,
-        splits: dto.percentSplits,
+        paidByUserId: dto.paidByUserId,
+        percentSplits: dto.percentSplits,
         category: dto.category,
       },
       userId,
@@ -130,7 +158,10 @@ export class GroupExpenseController {
       items: {
         type: 'object',
         properties: {
-          expenseId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+          expenseId: {
+            type: 'string',
+            example: '123e4567-e89b-12d3-a456-426614174000',
+          },
           expenseTitle: { type: 'string', example: 'Dinner at restaurant' },
           totalAmount: { type: 'string', example: '150.00' },
           myShare: { type: 'string', example: '50.00' },
@@ -141,15 +172,24 @@ export class GroupExpenseController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized - Missing or invalid JWT token' })
-  @ApiResponse({ status: 404, description: 'Not found - User is not a member of this group' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing or invalid JWT token',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Not found - User is not a member of this group',
+  })
   async getMyDebts(@Param('groupId') groupId: string, @Req() req: Request) {
     const userId = getUserIdFromRequest(req);
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
     // Get member ID from group-service by passing the Authorization header
     const authHeader = req.headers.authorization || '';
-    const memberId = await this.groupClientService.getMyMemberId(groupId, authHeader);
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
 
     // Get debts for this member
     return this.groupExpenseService.getMyDebts(groupId, String(memberId));
@@ -158,14 +198,15 @@ export class GroupExpenseController {
   @Get('payment-history')
   @ApiOperation({
     summary: 'Get payment history (paid/received) for current user in a month',
-    description: 'Returns list of payments made and received by current user in the specified month'
+    description:
+      'Returns list of payments made and received by current user in the specified month',
   })
   @ApiParam({ name: 'groupId', description: 'Group ID' })
   @ApiQuery({
     name: 'monthYear',
     required: true,
     description: 'Month and year in format MM/YYYY',
-    example: '12/2025'
+    example: '12/2025',
   })
   @ApiResponse({
     status: 200,
@@ -184,7 +225,11 @@ export class GroupExpenseController {
               amount: { type: 'number', example: 300 },
               expenseTitle: { type: 'string', example: 'Dinner' },
               category: { type: 'string', example: 'food' },
-              from: { type: 'string', example: 'Nam', description: 'Only for received type' },
+              from: {
+                type: 'string',
+                example: 'Nam',
+                description: 'Only for received type',
+              },
               note: { type: 'string', example: 'Đã thanh toán cho nhóm' },
             },
           },
@@ -194,7 +239,11 @@ export class GroupExpenseController {
           properties: {
             totalPaid: { type: 'number', example: 300 },
             totalReceived: { type: 'number', example: 200 },
-            net: { type: 'number', example: -100, description: 'Positive = received more, Negative = paid more' },
+            net: {
+              type: 'number',
+              example: -100,
+              description: 'Positive = received more, Negative = paid more',
+            },
           },
         },
       },
@@ -203,26 +252,36 @@ export class GroupExpenseController {
   async getPaymentHistory(
     @Param('groupId') groupId: string,
     @Query('monthYear') monthYear: string,
-    @Req() req: Request
+    @Req() req: Request,
   ) {
     const userId = getUserIdFromRequest(req);
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
     if (!monthYear) {
-      throw new BadRequestException('monthYear query parameter is required (format: MM/YYYY)');
+      throw new BadRequestException(
+        'monthYear query parameter is required (format: MM/YYYY)',
+      );
     }
 
     // Get member ID from group-service
     const authHeader = req.headers.authorization || '';
-    const memberId = await this.groupClientService.getMyMemberId(groupId, authHeader);
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
 
-    return this.groupExpenseService.getPaymentHistory(groupId, String(memberId), monthYear);
+    return this.groupExpenseService.getPaymentHistory(
+      groupId,
+      String(memberId),
+      monthYear,
+    );
   }
 
   @Post('mark-paid')
   @ApiOperation({
     summary: 'Mark a debt as paid (payer only)',
-    description: 'Marks a share as paid and creates settlement transactions for both payer and debtor'
+    description:
+      'Marks a share as paid and creates settlement transactions for both payer and debtor',
   })
   @ApiParam({ name: 'groupId', description: 'Group ID' })
   @ApiResponse({
@@ -240,15 +299,23 @@ export class GroupExpenseController {
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
     const authHeader = req.headers.authorization || '';
-    const memberId = await this.groupClientService.getMyMemberId(groupId, authHeader);
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
 
-    return this.groupExpenseService.markShareAsPaid(dto.shareId, memberId, groupId);
+    return this.groupExpenseService.markShareAsPaid(
+      dto.shareId,
+      memberId,
+      groupId,
+    );
   }
 
   @Get('owed-to-me')
   @ApiOperation({
     summary: 'Get list of unpaid debts owed to me',
-    description: 'Returns all unpaid shares from expenses where current user is the payer'
+    description:
+      'Returns all unpaid shares from expenses where current user is the payer',
   })
   @ApiParam({ name: 'groupId', description: 'Group ID' })
   @ApiResponse({
@@ -259,8 +326,14 @@ export class GroupExpenseController {
       items: {
         type: 'object',
         properties: {
-          shareId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
-          expenseId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+          shareId: {
+            type: 'string',
+            example: '123e4567-e89b-12d3-a456-426614174000',
+          },
+          expenseId: {
+            type: 'string',
+            example: '123e4567-e89b-12d3-a456-426614174000',
+          },
           expenseTitle: { type: 'string', example: 'Dinner at restaurant' },
           totalAmount: { type: 'string', example: '150.00' },
           shareAmount: { type: 'string', example: '50.00' },
@@ -276,7 +349,10 @@ export class GroupExpenseController {
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
     const authHeader = req.headers.authorization || '';
-    const memberId = await this.groupClientService.getMyMemberId(groupId, authHeader);
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
 
     return this.groupExpenseService.getOwedToMe(groupId, String(memberId));
   }

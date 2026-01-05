@@ -171,14 +171,19 @@ export class AmountExtractorService {
    * Examples:
    * - "ăn phở 50000" -> 50,000
    * - "mua áo 1.500.000" -> 1,500,000
+   * - "Coca 2 25000 50,000" -> 50,000
    */
   private extractPlainNumber(text: string): ExtractAmountResponseDto {
-    // Match numbers with at least 3 digits
-    const pattern = /\b(\d{3,}(?:[.,]\d{3})*(?:[.,]\d{1,2})?)\b/g;
+    // Match various number formats:
+    // - Plain numbers: 50000, 25000
+    // - Comma-separated: 50,000, 1,500,000
+    // - Dot-separated: 50.000, 1.500.000
+    // - Mixed: 25.000
+    const pattern = /(\d{1,3}(?:[.,]\d{3})+|\d{4,})/g;
     const matches = Array.from(text.matchAll(pattern));
 
     if (matches.length > 0) {
-      // Use rightmost number
+      // Use rightmost number (usually the total amount in receipts)
       const match = matches[matches.length - 1];
       const amountStr = match[1].replace(/[.,]/g, ''); // Remove all separators
       const amount = parseInt(amountStr);

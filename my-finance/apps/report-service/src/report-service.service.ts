@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { TransactionEventDto } from './dto';
 import { TransactionClientService } from './transaction-client.service';
+import { TransactionStatsGrpcClient } from './grpc/transaction-stats.client';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
 
@@ -24,6 +25,7 @@ export class ReportServiceService {
     private readonly redis: Redis,
     private readonly configService: ConfigService,
     private readonly transactionClient: TransactionClientService,
+    private readonly grpcClient: TransactionStatsGrpcClient,
   ) {}
 
   // ========== HELPER ==========
@@ -82,7 +84,8 @@ export class ReportServiceService {
     const dailyKey = this.getDailyKey(userId, year, month);
 
     // Ensure currency field exists
-    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const defaultCurrency =
+      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     await this.redis.hsetnx(summaryKey, 'currency', defaultCurrency);
 
     if (type === 'INCOME') {
@@ -117,7 +120,9 @@ export class ReportServiceService {
 
       if (!cacheExists) {
         // Cache doesn't exist → Skip update, will rebuild on next read
-        this.logger.log(`⏭️  [Cache Skip] Cache doesn't exist for ${summaryKey}, will rebuild on next read`);
+        this.logger.log(
+          `⏭️  [Cache Skip] Cache doesn't exist for ${summaryKey}, will rebuild on next read`,
+        );
       } else {
         // Cache exists → Apply incremental update
         this.logger.log(`⚡ [Incremental Update] Updating cache ${summaryKey}`);
@@ -145,7 +150,9 @@ export class ReportServiceService {
     const afterDate = new Date(after.dateTime);
 
     try {
-      this.logger.log(`⚡ [Incremental Update] Transaction updated - removing old, adding new`);
+      this.logger.log(
+        `⚡ [Incremental Update] Transaction updated - removing old, adding new`,
+      );
 
       // Remove old transaction from cache
       await this.applyIncrementalUpdate(
@@ -172,12 +179,20 @@ export class ReportServiceService {
       const afterMonth = afterDate.getMonth() + 1;
       const afterYear = afterDate.getFullYear();
 
-      await this.redis.del(this.getSummaryKey(payload.userId, beforeYear, beforeMonth));
-      await this.redis.del(this.getDailyKey(payload.userId, beforeYear, beforeMonth));
+      await this.redis.del(
+        this.getSummaryKey(payload.userId, beforeYear, beforeMonth),
+      );
+      await this.redis.del(
+        this.getDailyKey(payload.userId, beforeYear, beforeMonth),
+      );
 
       if (beforeMonth !== afterMonth || beforeYear !== afterYear) {
-        await this.redis.del(this.getSummaryKey(payload.userId, afterYear, afterMonth));
-        await this.redis.del(this.getDailyKey(payload.userId, afterYear, afterMonth));
+        await this.redis.del(
+          this.getSummaryKey(payload.userId, afterYear, afterMonth),
+        );
+        await this.redis.del(
+          this.getDailyKey(payload.userId, afterYear, afterMonth),
+        );
       }
     }
   }
@@ -190,7 +205,9 @@ export class ReportServiceService {
     const dateTime = new Date(before.dateTime);
 
     try {
-      this.logger.log(`⚡ [Incremental Update] Transaction deleted - removing from cache`);
+      this.logger.log(
+        `⚡ [Incremental Update] Transaction deleted - removing from cache`,
+      );
 
       // Remove transaction from cache
       await this.applyIncrementalUpdate(
@@ -223,8 +240,13 @@ export class ReportServiceService {
       // Check if hash has any data
       if (Object.keys(data).length > 0) {
         this.cacheHits++;
-        const hitRate = (this.cacheHits / (this.cacheHits + this.cacheMisses) * 100).toFixed(2);
-        this.logger.log(`✅ [Cache HIT] Redis key: ${key} | Hit rate: ${hitRate}%`);
+        const hitRate = (
+          (this.cacheHits / (this.cacheHits + this.cacheMisses)) *
+          100
+        ).toFixed(2);
+        this.logger.log(
+          `✅ [Cache HIT] Redis key: ${key} | Hit rate: ${hitRate}%`,
+        );
         return data;
       }
 
@@ -242,7 +264,11 @@ export class ReportServiceService {
    * Try to update Redis cache
    * Does not throw on error - just logs warning
    */
-  private async tryUpdateCache(key: string, data: Record<string, any>, ttl?: number): Promise<void> {
+  private async tryUpdateCache(
+    key: string,
+    data: Record<string, any>,
+    ttl?: number,
+  ): Promise<void> {
     try {
       // Set all hash fields
       if (Object.keys(data).length > 0) {
@@ -303,16 +329,22 @@ export class ReportServiceService {
     year: number,
     month: number,
   ): Promise<any> {
-    this.logger.log(`🔄 [Rebuild Cache] Querying Transaction Service for ${monthYear}`);
+    this.logger.log(
+      `🔄 [Rebuild Cache] Querying Transaction Service for ${monthYear}`,
+    );
 
     // Query SSOT
-    const transactions = await this.transactionClient.getTransactionsByMonth(userId, monthYear);
+    const transactions = await this.transactionClient.getTransactionsByMonth(
+      userId,
+      monthYear,
+    );
 
     // Aggregate locally
     const aggregated = this.aggregateTransactions(transactions);
 
     // Build hash data for Redis
-    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const defaultCurrency =
+      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const hashData: Record<string, string> = {
       currency: defaultCurrency,
       'income:total': aggregated.incomeTotal.toString(),
@@ -320,7 +352,9 @@ export class ReportServiceService {
     };
 
     // Add category breakdown
-    for (const [category, amount] of Object.entries(aggregated.categoryBreakdown)) {
+    for (const [category, amount] of Object.entries(
+      aggregated.categoryBreakdown,
+    )) {
       hashData[`category:${category}`] = amount.toString();
     }
 
@@ -333,7 +367,11 @@ export class ReportServiceService {
 
   // ========== /transactions/summary ==========
 
-  async getMonthlySummary(userId: string, monthYear: string, forceRefresh: boolean = false) {
+  async getMonthlySummary(
+    userId: string,
+    monthYear: string,
+    forceRefresh: boolean = false,
+  ) {
     const { month, year } = this.parseMonthYear(monthYear);
     const summaryKey = this.getSummaryKey(userId, year, month);
 
@@ -358,7 +396,8 @@ export class ReportServiceService {
     }
 
     // 4️⃣ Parse and return data
-    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const defaultCurrency =
+      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const currency = hash.currency || defaultCurrency;
     const incomeTotal = parseFloat(hash['income:total'] ?? '0');
     const expenseTotal = parseFloat(hash['expense:total'] ?? '0');
@@ -391,48 +430,74 @@ export class ReportServiceService {
 
   // ========== /stats/line ==========
 
-  private async buildCumulativeSeries(
+  /**
+   * Build cumulative expense series for a month using gRPC
+   * Queries transaction-service directly via gRPC for daily stats
+   */
+  private async buildCumulativeSeriesViaGrpc(
     userId: string,
     month: number,
     year: number,
   ) {
-    const dailyKey = this.getDailyKey(userId, year, month);
-    const dailyHash = await this.redis.hgetall(dailyKey);
-
     const daysInMonth = new Date(year, month, 0).getDate();
-    const sumPerDay: Record<number, number> = {};
 
-    for (const [field, value] of Object.entries(dailyHash)) {
-      if (field.startsWith('day:')) {
-        const day = Number(field.substring('day:'.length));
-        sumPerDay[day] = parseFloat(value);
+    // Build date range for the month
+    const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+    const endDate = `${year}-${(month + 1).toString().padStart(2, '0')}-01`;
+
+    // Handle year rollover for December
+    const actualEndDate =
+      month === 12 ? `${year + 1}-01-01` : endDate;
+
+    try {
+      // Query daily stats via gRPC
+      const dailyStats = await this.grpcClient.getDailyStats(
+        userId,
+        startDate,
+        actualEndDate,
+      );
+
+      // Build expense per day map
+      const expensePerDay: Record<number, number> = {};
+      for (const stat of dailyStats) {
+        const day = new Date(stat.date).getDate();
+        expensePerDay[day] = stat.expense;
       }
-    }
 
-    const result: { day: number; total: number }[] = [];
-    let cumulative = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      cumulative += sumPerDay[d] ?? 0;
-      result.push({ day: d, total: cumulative });
+      // Build cumulative series
+      const result: { day: number; total: number }[] = [];
+      let cumulative = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        cumulative += expensePerDay[d] ?? 0;
+        result.push({ day: d, total: cumulative });
+      }
+
+      return result;
+    } catch (error: any) {
+      this.logger.error(`❌ [gRPC Error] ${error.message}`);
+      // Return empty series on error
+      return Array.from({ length: daysInMonth }, (_, i) => ({
+        day: i + 1,
+        total: 0,
+      }));
     }
-    return result;
   }
 
   async getLineStats(userId: string, monthYear: string) {
     const { month, year } = this.parseMonthYear(monthYear);
 
-    const currentMonth = await this.buildCumulativeSeries(
+    this.logger.log(`📊 [LineStats] Fetching via gRPC for ${monthYear}`);
+
+    // Get current month stats via gRPC
+    const currentMonth = await this.buildCumulativeSeriesViaGrpc(
       userId,
       month,
       year,
     );
 
-    const { month: prevMonth, year: prevYear } = this.getPrevMonth(
-      month,
-      year,
-    );
-
-    const previousMonth = await this.buildCumulativeSeries(
+    // Get previous month stats via gRPC
+    const { month: prevMonth, year: prevYear } = this.getPrevMonth(month, year);
+    const previousMonth = await this.buildCumulativeSeriesViaGrpc(
       userId,
       prevMonth,
       prevYear,
@@ -451,7 +516,8 @@ export class ReportServiceService {
     const summaryKey = this.getSummaryKey(userId, year, month);
     const hash = await this.redis.hgetall(summaryKey);
 
-    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const defaultCurrency =
+      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const currency = hash.currency || defaultCurrency;
     const data: Record<string, number> = {};
 
@@ -486,11 +552,15 @@ export class ReportServiceService {
     await this.redis.del(dailyKey);
 
     // Rebuild from SSOT
-    const transactions = await this.transactionClient.getTransactionsByMonth(userId, monthYear);
+    const transactions = await this.transactionClient.getTransactionsByMonth(
+      userId,
+      monthYear,
+    );
     const aggregated = this.aggregateTransactions(transactions);
 
     // Build hash data for Redis
-    const defaultCurrency = this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
+    const defaultCurrency =
+      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
     const hashData: Record<string, string> = {
       currency: defaultCurrency,
       'income:total': aggregated.incomeTotal.toString(),
@@ -498,7 +568,9 @@ export class ReportServiceService {
     };
 
     // Add category breakdown
-    for (const [category, amount] of Object.entries(aggregated.categoryBreakdown)) {
+    for (const [category, amount] of Object.entries(
+      aggregated.categoryBreakdown,
+    )) {
       hashData[`category:${category}`] = amount.toString();
     }
 
@@ -508,7 +580,9 @@ export class ReportServiceService {
     // Also rebuild daily cache for line chart
     await this.rebuildDailyCache(userId, year, month, transactions);
 
-    this.logger.log(`✅ [Admin] Cache rebuilt: ${transactions.length} transactions processed`);
+    this.logger.log(
+      `✅ [Admin] Cache rebuilt: ${transactions.length} transactions processed`,
+    );
 
     return {
       transactionsProcessed: transactions.length,
@@ -520,7 +594,7 @@ export class ReportServiceService {
     userId: string,
     year: number,
     month: number,
-    transactions: any[]
+    transactions: any[],
   ) {
     const dailyKey = this.getDailyKey(userId, year, month);
     const dailyData: Record<string, string> = {};
