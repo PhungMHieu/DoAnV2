@@ -214,6 +214,7 @@ export class TransactionServiceService {
       // Apply month/year filter if provided
       if (monthYear) {
         if (monthYear.toLowerCase() === 'future') {
+          // Future: transactions from tomorrow onwards
           const tomorrow = new Date();
           tomorrow.setDate(tomorrow.getDate() + 1);
           tomorrow.setHours(0, 0, 0, 0);
@@ -229,7 +230,17 @@ export class TransactionServiceService {
 
             if (!isNaN(month) && !isNaN(year) && month >= 1 && month <= 12) {
               const startDate = new Date(year, month - 1, 1);
-              const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+              // Get today at end of day (23:59:59.999)
+              const today = new Date();
+              const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
+              // Get end of the requested month
+              const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+              // Use the earlier of todayEnd or monthEnd as endDate
+              // This ensures we only get transactions up to today for current/future months
+              const endDate = todayEnd < monthEnd ? todayEnd : monthEnd;
 
               queryBuilder
                 .andWhere('transaction.dateTime >= :startDate', { startDate })
