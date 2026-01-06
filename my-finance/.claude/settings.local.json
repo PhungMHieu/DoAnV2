@@ -27,7 +27,8 @@
       "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:64679 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker build:*)",
       "Bash(npm install:*)",
       "Bash(kubectl rollout:*)",
-      "Bash(kubectl delete:*)"
+      "Bash(kubectl delete:*)",
+      "Bash(rm:*)"
     ]
   }
 }

@@ -206,10 +206,13 @@ services:
       - GROUP_SERVICE_PORT=3004
       - DATABASE_URL=postgresql://myfinance_user:myfinance_pass@postgres:5432/myfinance_db
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
     ports:
       - "3004:3004"
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - my-finance-network

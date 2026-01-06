@@ -4,10 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/GroupMember.entity';
-
 @Injectable()
 export class GroupServiceService {
   constructor(
@@ -16,6 +15,8 @@ export class GroupServiceService {
 
     @InjectRepository(GroupMember)
     private readonly groupMemberRepository: Repository<GroupMember>,
+
+    private readonly dataSource: DataSource,
   ) {}
   async createGroup(
     createdByUserId: string,
@@ -76,7 +77,9 @@ export class GroupServiceService {
       joinedAt: new Date(),
     });
 
-    return this.groupMemberRepository.save(newMember);
+    const savedMember = await this.groupMemberRepository.save(newMember);
+
+    return savedMember;
   }
 
   async getGroupByCode(code: string): Promise<Group> {
@@ -143,24 +146,81 @@ export class GroupServiceService {
     return member;
   }
 
-  async leaveGroup(userId: string, groupId: string): Promise<void> {
-    const member = await this.groupMemberRepository.findOne({
-      where: { userId, group: { id: groupId } },
-      relations: ['group'],
-    });
+  async leaveGroup(userId: string, groupId: string): Promise<{ transferred?: boolean; newOwnerId?: string; newOwnerName?: string; deleted?: boolean }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!member) {
-      throw new NotFoundException('You are not a member of this group');
+    try {
+      // Lock the group row to prevent race conditions
+      const group = await queryRunner.manager.findOne(Group, {
+        where: { id: groupId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!group) {
+        throw new NotFoundException('Group not found');
+      }
+
+      // Find member with lock
+      const member = await queryRunner.manager.findOne(GroupMember, {
+        where: { userId, group: { id: groupId } },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!member) {
+        throw new NotFoundException('You are not a member of this group');
+      }
+
+      const isOwner = group.createdByUserId === userId;
+
+      // Remove current member
+      await queryRunner.manager.remove(member);
+
+      let result: { transferred?: boolean; newOwnerId?: string; newOwnerName?: string; deleted?: boolean } = {};
+
+      // If user is the group creator, transfer ownership or delete group
+      if (isOwner) {
+        // Find another joined member to transfer ownership (must have userId)
+        const otherMembers = await queryRunner.manager.find(GroupMember, {
+          where: { group: { id: groupId }, joined: true },
+          order: { joinedAt: 'ASC' }, // Oldest member first
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        // Filter members with valid userId
+        const eligibleMembers = otherMembers.filter((m) => m.userId);
+
+        if (eligibleMembers.length > 0) {
+          // Transfer ownership to the oldest eligible member
+          const newOwner = eligibleMembers[0];
+          group.createdByUserId = newOwner.userId!;
+          await queryRunner.manager.save(group);
+
+          result = { transferred: true, newOwnerId: newOwner.userId!, newOwnerName: newOwner.name };
+        } else {
+          // No eligible members left, delete all remaining members and the group
+          const remainingMembers = await queryRunner.manager.find(GroupMember, {
+            where: { group: { id: groupId } },
+          });
+
+          if (remainingMembers.length > 0) {
+            await queryRunner.manager.remove(remainingMembers);
+          }
+          await queryRunner.manager.remove(group);
+
+          result = { deleted: true };
+        }
+      }
+
+      await queryRunner.commitTransaction();
+      return result;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    // Check if user is the group creator
-    if (member.group.createdByUserId === userId) {
-      throw new BadRequestException(
-        'Group creator cannot leave. Transfer ownership or delete the group instead.',
-      );
-    }
-
-    await this.groupMemberRepository.remove(member);
   }
 
   async addMemberToGroup(
@@ -196,7 +256,93 @@ export class GroupServiceService {
       joinedAt: userId ? new Date() : null,
     });
 
-    return this.groupMemberRepository.save(newMember);
+    const savedMember = await this.groupMemberRepository.save(newMember);
+
+    return savedMember;
+  }
+
+  async transferOwnership(
+    currentOwnerId: string,
+    groupId: string,
+    newOwnerUserId: string,
+  ): Promise<{ newOwnerId: string; newOwnerName: string }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Lock the group row to prevent race conditions
+      const group = await queryRunner.manager.findOne(Group, {
+        where: { id: groupId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!group) {
+        throw new NotFoundException('Group not found');
+      }
+
+      // Check if current user is the owner
+      if (group.createdByUserId !== currentOwnerId) {
+        throw new BadRequestException('Only the group owner can transfer ownership');
+      }
+
+      // Check if new owner is different from current owner
+      if (currentOwnerId === newOwnerUserId) {
+        throw new BadRequestException('Cannot transfer ownership to yourself');
+      }
+
+      // Find new owner member in this group
+      const newOwnerMember = await queryRunner.manager.findOne(GroupMember, {
+        where: { userId: newOwnerUserId, group: { id: groupId }, joined: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!newOwnerMember) {
+        throw new NotFoundException('New owner is not a joined member of this group');
+      }
+
+      // Transfer ownership
+      group.createdByUserId = newOwnerUserId;
+      await queryRunner.manager.save(group);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        newOwnerId: newOwnerUserId,
+        newOwnerName: newOwnerMember.name,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async deleteGroup(userId: string, groupId: string): Promise<void> {
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId },
+      relations: ['members'],
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    // Only group creator can delete the group
+    if (group.createdByUserId !== userId) {
+      throw new BadRequestException(
+        'Only the group creator can delete this group',
+      );
+    }
+
+    // Delete all members first
+    if (group.members && group.members.length > 0) {
+      await this.groupMemberRepository.remove(group.members);
+    }
+
+    // Delete the group
+    await this.groupRepository.remove(group);
   }
 
   private generateGroupCode(): string {

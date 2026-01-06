@@ -25,10 +25,12 @@ curl -s -X POST $KONG_ADMIN_URL/services \
   --data "url=http://auth-service:3002" > /dev/null
 echo "  ✅ auth-service"
 
-# Transaction Service
+# Transaction Service (with extended timeout for SSE)
 curl -s -X POST $KONG_ADMIN_URL/services \
   --data "name=transaction-service" \
-  --data "url=http://transaction-service:3001" > /dev/null
+  --data "url=http://transaction-service:3001" \
+  --data "read_timeout=86400000" \
+  --data "write_timeout=86400000" > /dev/null
 echo "  ✅ transaction-service"
 
 # Report Service
@@ -37,10 +39,12 @@ curl -s -X POST $KONG_ADMIN_URL/services \
   --data "url=http://report-service:3003" > /dev/null
 echo "  ✅ report-service"
 
-# Group Service
+# Group Service (with extended timeout for SSE)
 curl -s -X POST $KONG_ADMIN_URL/services \
   --data "name=group-service" \
-  --data "url=http://group-service:3004" > /dev/null
+  --data "url=http://group-service:3004" \
+  --data "read_timeout=86400000" \
+  --data "write_timeout=86400000" > /dev/null
 echo "  ✅ group-service"
 
 # ============================================
@@ -77,12 +81,20 @@ curl -s -X POST $KONG_ADMIN_URL/services/report-service/routes \
   --data "strip_path=true" > /dev/null
 echo "  ✅ /api/reports/* -> report-service"
 
-# Group routes (protected)
+# Group routes (protected) - for group management and SSE events
 curl -s -X POST $KONG_ADMIN_URL/services/group-service/routes \
   --data "name=group-routes" \
   --data "paths[]=/api/groups" \
   --data "strip_path=true" > /dev/null
 echo "  ✅ /api/groups/* -> group-service"
+
+# Group expense routes (protected) - for expenses and expense SSE events
+# Note: This path is more specific and has higher priority
+curl -s -X POST $KONG_ADMIN_URL/services/transaction-service/routes \
+  --data "name=group-expense-routes" \
+  --data "paths[]=/api/group-expenses" \
+  --data "strip_path=false" > /dev/null
+echo "  ✅ /api/group-expenses/* -> transaction-service"
 
 # ============================================
 # 3. Create Consumer and JWT Credentials
@@ -130,6 +142,7 @@ curl -s -X POST $KONG_ADMIN_URL/services/group-service/plugins \
   --data "name=jwt" \
   --data "config.claims_to_verify=exp" > /dev/null
 echo "  ✅ JWT enabled for group-service"
+
 
 # ============================================
 # 5. Add Post-Function Plugin to forward user ID

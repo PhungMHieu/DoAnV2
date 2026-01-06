@@ -19,6 +19,7 @@ import { GroupServiceService } from './group-service.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
 import { CreateGroupDto, JoinGroupDto } from './dto';
 import type { Request } from 'express';
+
 @ApiTags('Groups')
 @ApiBearerAuth('access-token')
 @Controller()
@@ -429,11 +430,57 @@ export class GroupServiceController {
     };
   }
 
+  @Post(':groupId/transfer-ownership')
+  @ApiOperation({
+    summary: 'Transfer group ownership',
+    description:
+      'Transfer ownership of the group to another joined member. Only the current owner can do this.',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Ownership transferred successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Ownership transferred successfully' },
+        newOwnerId: { type: 'string', example: 'user-456' },
+        newOwnerName: { type: 'string', example: 'Alice' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Only the group owner can transfer ownership' })
+  @ApiResponse({ status: 404, description: 'Group or new owner not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async transferOwnership(
+    @Param('groupId') groupId: string,
+    @Body('newOwnerUserId') newOwnerUserId: string,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    if (!newOwnerUserId || !newOwnerUserId.trim()) {
+      throw new BadRequestException('newOwnerUserId is required');
+    }
+
+    const result = await this.groupsService.transferOwnership(
+      userId,
+      groupId,
+      newOwnerUserId.trim(),
+    );
+
+    return {
+      message: 'Ownership transferred successfully',
+      ...result,
+    };
+  }
+
   @Delete(':groupId/leave')
   @ApiOperation({
     summary: 'Leave a group',
     description:
-      'Current user leaves the specified group. Group creator cannot leave.',
+      'Current user leaves the specified group. If the owner leaves, ownership transfers to the next oldest member. If no members remain, the group is deleted.',
   })
   @ApiParam({ name: 'groupId', description: 'Group ID' })
   @ApiResponse({
@@ -443,12 +490,11 @@ export class GroupServiceController {
       type: 'object',
       properties: {
         message: { type: 'string', example: 'Successfully left the group' },
+        transferred: { type: 'boolean', example: false, description: 'Whether ownership was transferred' },
+        newOwnerId: { type: 'string', nullable: true, description: 'New owner userId if transferred' },
+        deleted: { type: 'boolean', example: false, description: 'Whether the group was deleted' },
       },
     },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Group creator cannot leave the group',
   })
   @ApiResponse({ status: 404, description: 'Not a member of this group' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
@@ -456,8 +502,47 @@ export class GroupServiceController {
     const userId = getUserIdFromRequest(req);
     if (!userId) throw new BadRequestException('Missing or invalid JWT token');
 
-    await this.groupsService.leaveGroup(userId, groupId);
+    const result = await this.groupsService.leaveGroup(userId, groupId);
 
-    return { message: 'Successfully left the group' };
+    return {
+      message: result.deleted
+        ? 'Group deleted (no members remaining)'
+        : result.transferred
+          ? 'Successfully left the group and ownership transferred'
+          : 'Successfully left the group',
+      ...result,
+    };
+  }
+
+  @Delete(':groupId')
+  @ApiOperation({
+    summary: 'Delete a group',
+    description:
+      'Deletes the specified group and all its members. Only the group creator can delete.',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Group deleted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Group deleted successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Only the group creator can delete this group',
+  })
+  @ApiResponse({ status: 404, description: 'Group not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async deleteGroup(@Param('groupId') groupId: string, @Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    await this.groupsService.deleteGroup(userId, groupId);
+
+    return { message: 'Group deleted successfully' };
   }
 }

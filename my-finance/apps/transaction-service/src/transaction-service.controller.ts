@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -285,6 +286,67 @@ export class TransactionServiceController {
     return this.transactionServiceService.analyzeAndSaveTransactions(
       userId,
       text,
+    );
+  }
+
+  @Post('save-analyzed-transactions')
+  @ApiOperation({
+    summary: 'Save pre-analyzed transactions',
+    description:
+      'Saves transactions that have already been analyzed by the client (amount and category provided).',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['transactions'],
+      properties: {
+        transactions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['amount', 'category'],
+            properties: {
+              amount: { type: 'number', example: 50000 },
+              category: { type: 'string', example: 'food' },
+              note: { type: 'string', example: 'ăn phở' },
+              dateTime: {
+                type: 'string',
+                format: 'date-time',
+                example: '2025-01-04T12:00:00Z',
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Transactions saved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async saveAnalyzedTransactions(
+    @Req() req: Request,
+    @Body('transactions')
+    transactions: Array<{
+      amount: number;
+      category: string;
+      note?: string;
+      dateTime?: string;
+    }>,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      throw new UnauthorizedException('Missing or invalid JWT token');
+    }
+
+    if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
+      throw new BadRequestException('transactions array is required');
+    }
+
+    return this.transactionServiceService.saveAnalyzedTransactions(
+      userId,
+      transactions,
     );
   }
 }

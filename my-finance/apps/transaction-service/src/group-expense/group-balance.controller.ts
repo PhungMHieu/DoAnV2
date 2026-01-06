@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { GroupBalanceService } from './group-balance.service';
 
 @ApiTags('Group Balances')
-@Controller('groups/:groupId/balances')
+@Controller('api/group-expenses/:groupId/balances')
 export class GroupBalanceController {
   constructor(private readonly groupBalanceService: GroupBalanceService) {}
 

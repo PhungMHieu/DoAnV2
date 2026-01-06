@@ -189,7 +189,7 @@ export class TransactionServiceService {
       });
 
       const months = Array.from(monthsSet);
-      months.push('future');
+      months.push('tương lai');
 
       return months;
     } catch (error) {
@@ -307,6 +307,37 @@ export class TransactionServiceService {
 
         savedTransactions.push(saved);
       }
+    }
+
+    return { transactions: savedTransactions };
+  }
+
+  async saveAnalyzedTransactions(
+    userId: string,
+    transactions: Array<{
+      amount: number;
+      category: string;
+      note?: string;
+      dateTime?: Date | string;
+    }>,
+  ) {
+    this.logger.log(
+      `Saving ${transactions.length} analyzed transactions for user ${userId}`,
+    );
+
+    const savedTransactions: TransactionEntity[] = [];
+    const now = new Date();
+
+    for (const tx of transactions) {
+      const saved = await this.createTransaction(userId, {
+        amount: Math.abs(tx.amount),
+        category: tx.category,
+        note: tx.note || '',
+        dateTime: tx.dateTime ? new Date(tx.dateTime) : now,
+        userId,
+      } as TransactionEntity);
+
+      savedTransactions.push(saved);
     }
 
     return { transactions: savedTransactions };
