@@ -189,7 +189,7 @@ export class TransactionServiceService {
       });
 
       const months = Array.from(monthsSet);
-      months.push('tương lai');
+      months.push('future');
 
       return months;
     } catch (error) {
