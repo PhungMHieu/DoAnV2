@@ -101,20 +101,7 @@ export class TransactionServiceController {
   @ApiOperation({
     summary: 'Create transaction',
     description:
-      'Creates a new transaction for the user.\n\n' +
-      '**AI Amount Extraction behavior:**\n' +
-      "- If `amount` IS provided → Uses user's value (extraction will NOT run)\n" +
-      '- If `amount` is NOT provided BUT `note` exists → AI extracts amount from Vietnamese text\n' +
-      '- Supports: plain numbers (50000), k notation (50k), Vietnamese words (50 nghìn, 1.5 triệu)\n' +
-      '- If extraction fails → Defaults to 0\n\n' +
-      '**AI Auto-categorization behavior:**\n' +
-      "- If `category` IS provided → Uses user's choice (AI will NOT override)\n" +
-      '- If `category` is NOT provided BUT `note` exists → AI auto-predicts category\n' +
-      '- If both missing → Defaults to "other"\n\n' +
-      '**Examples:**\n' +
-      '1. Text-only input: `{note: "ăn phở 50k", type: "EXPENSE", dateTime: "..."}` → Extracts amount: 50000, predicts category: "food"\n' +
-      '2. User provides amount: `{amount: 50000, note: "lunch", type: "EXPENSE"}` → Uses 50000, predicts category\n' +
-      '3. User provides both: `{amount: 50000, category: "food", note: "lunch"}` → Uses both user values',
+      'Creates a new transaction for the user.\n\n'
   })
   @ApiBody({
     description:

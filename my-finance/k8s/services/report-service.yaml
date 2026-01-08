@@ -19,6 +19,7 @@ spec:
         - name: report-service
           image: my-finance/report-service:latest
           imagePullPolicy: IfNotPresent
+          command: ["node", "dist/apps/report-service/main"]
           ports:
             - containerPort: 3003
           envFrom:
@@ -38,14 +39,12 @@ spec:
               memory: "256Mi"
               cpu: "300m"
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3003
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3003
             initialDelaySeconds: 30
             periodSeconds: 10

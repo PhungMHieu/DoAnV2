@@ -1,11 +1,13 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { join } from 'path';
 import { TransactionEntity } from './entities/transaction.entity';
 import { AccountEntity } from './entities/account.entity';
 import { TransactionServiceService } from './transaction-service.service';
 import { RmqModule } from '@app/rmq-common/lib/rmq.module';
 import { REPORT_SERVICE } from '@app/rmq-common/lib/rmq.constants';
-import { HttpModule } from '@nestjs/axios';
 
 // ML Services
 import { CategoryPredictionService } from './ml/categories/category-prediction.service';
@@ -23,10 +25,31 @@ import { AccountService } from './account/account.service';
       name: REPORT_SERVICE,
       queue: 'report_queue',
     }),
-    HttpModule.register({
-      timeout: 10000,
-      maxRedirects: 5,
-    }),
+    // ML gRPC Client
+    ClientsModule.registerAsync([
+      {
+        name: 'ML_GRPC_PACKAGE',
+        imports: [ConfigModule],
+        useFactory: (configService: ConfigService) => {
+          const grpcUrl =
+            configService.get<string>('ML_GRPC_URL') || 'localhost:50051';
+
+          // In Docker: /app/proto/ml_service.proto
+          // In local dev: relative path from dist
+          const protoPath = join(process.cwd(), 'proto/ml_service.proto');
+
+          return {
+            transport: Transport.GRPC,
+            options: {
+              package: 'ml',
+              protoPath,
+              url: grpcUrl,
+            },
+          };
+        },
+        inject: [ConfigService],
+      },
+    ]),
   ],
   providers: [
     TransactionServiceService,

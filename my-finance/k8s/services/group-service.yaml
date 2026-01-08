@@ -19,6 +19,7 @@ spec:
         - name: group-service
           image: my-finance/group-service:latest
           imagePullPolicy: IfNotPresent
+          command: ["node", "dist/apps/group-service/main"]
           ports:
             - containerPort: 3004
           envFrom:
@@ -43,14 +44,12 @@ spec:
               memory: "256Mi"
               cpu: "300m"
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3004
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3004
             initialDelaySeconds: 30
             periodSeconds: 10

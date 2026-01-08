@@ -75,9 +75,11 @@ export class GroupExpenseController {
         amount: dto.amount,
         paidByMemberId,
         paidByUserId: dto.paidByUserId,
+        paidByMemberName: dto.paidByMemberName,
         participants: dto.participants,
         createdByUserId: userId,
         category: dto.category,
+        date: dto.date,
       });
     }
 
@@ -103,8 +105,10 @@ export class GroupExpenseController {
           amount: dto.amount,
           paidByMemberId,
           paidByUserId: dto.paidByUserId,
+          paidByMemberName: dto.paidByMemberName,
           exactSplits: dto.exactSplits,
           category: dto.category,
+          date: dto.date,
         },
         userId,
       );
@@ -132,8 +136,10 @@ export class GroupExpenseController {
         amount: dto.amount,
         paidByMemberId,
         paidByUserId: dto.paidByUserId,
+        paidByMemberName: dto.paidByMemberName,
         percentSplits: dto.percentSplits,
         category: dto.category,
+        date: dto.date,
       },
       userId,
     );

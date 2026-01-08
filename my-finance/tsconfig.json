@@ -57,6 +57,12 @@
       ],
       "@app/swagger/*": [
         "libs/swagger/src/*"
+      ],
+      "@app/websocket-common": [
+        "libs/websocket-common/src"
+      ],
+      "@app/websocket-common/*": [
+        "libs/websocket-common/src/*"
       ]
     }
   }

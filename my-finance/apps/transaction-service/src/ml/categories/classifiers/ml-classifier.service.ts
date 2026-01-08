@@ -1,9 +1,12 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
-import { firstValueFrom, timeout, catchError } from 'rxjs';
-import { AxiosError } from 'axios';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import type { ClientGrpc } from '@nestjs/microservices';
+import { firstValueFrom, timeout, catchError, of } from 'rxjs';
 import { DEFAULT_CATEGORY } from '../category.constants';
+import type {
+  MlClassifierGrpcService,
+  PredictResponse,
+  HealthResponse,
+} from '../../../grpc/ml/ml-classifier.interface';
 
 interface PredictResult {
   category: string;
@@ -13,43 +16,45 @@ interface PredictResult {
 @Injectable()
 export class MlClassifierService implements OnModuleInit {
   private readonly logger = new Logger(MlClassifierService.name);
-  private readonly mlApiUrl: string;
   private readonly timeoutMs = 5000;
   private isAvailable = false;
+  private mlClassifierService: MlClassifierGrpcService;
 
   constructor(
-    private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
-  ) {
-    this.mlApiUrl = this.configService.get<string>(
-      'ML_API_URL',
-      'http://localhost:5000',
-    );
-  }
+    @Inject('ML_GRPC_PACKAGE') private readonly client: ClientGrpc,
+  ) {}
 
-  async onModuleInit() {
-    await this.checkHealth();
+  onModuleInit() {
+    this.mlClassifierService =
+      this.client.getService<MlClassifierGrpcService>('MlClassifier');
+
+    // Check if ML API is available on startup
+    this.checkHealth();
   }
 
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(`${this.mlApiUrl}/health`).pipe(
+      const response: HealthResponse = await firstValueFrom(
+        this.mlClassifierService.checkHealth({}).pipe(
           timeout(3000),
-          catchError((error: AxiosError) => {
-            throw error;
+          catchError((error) => {
+            this.logger.warn(`Health check failed: ${error.message}`);
+            return of({ status: 'unhealthy', modelLoaded: false });
           }),
         ),
       );
 
-      this.isAvailable = response.data?.status === 'healthy';
+      this.isAvailable = response.status === 'healthy';
+      const modelLoaded = response.modelLoaded;
+
       this.logger.log(
-        `ML API: ${this.isAvailable ? 'OK' : 'FAILED'}, Model: ${response.data?.model_loaded}`,
+        `ML API (gRPC): ${this.isAvailable ? 'OK' : 'FAILED'}, Model loaded: ${modelLoaded}`,
       );
-      return this.isAvailable && response.data?.model_loaded;
-    } catch {
+
+      return this.isAvailable && modelLoaded;
+    } catch (error) {
       this.isAvailable = false;
-      this.logger.warn(`ML API not available at ${this.mlApiUrl}`);
+      this.logger.warn(`ML API not available via gRPC: ${error.message}`);
       return false;
     }
   }
@@ -64,26 +69,30 @@ export class MlClassifierService implements OnModuleInit {
     }
 
     try {
-      const response = await firstValueFrom(
-        this.httpService
-          .post(`${this.mlApiUrl}/predict`, { text: note, amount })
-          .pipe(
-            timeout(this.timeoutMs),
-            catchError((error: AxiosError) => {
-              throw error;
-            }),
-          ),
+      const response: PredictResponse = await firstValueFrom(
+        this.mlClassifierService.predict({ text: note, amount }).pipe(
+          timeout(this.timeoutMs),
+          catchError((error) => {
+            throw error;
+          }),
+        ),
       );
 
       return {
-        category: response.data.category,
-        confidence: response.data.confidence,
+        category: response.category,
+        confidence: response.confidence,
       };
     } catch (error) {
       this.logger.error(`ML prediction failed: ${error.message}`);
-      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+
+      // Check if API became unavailable
+      if (
+        error.code === 14 || // UNAVAILABLE
+        error.code === 4 // DEADLINE_EXCEEDED
+      ) {
         this.isAvailable = false;
       }
+
       return { category: DEFAULT_CATEGORY, confidence: 0 };
     }
   }

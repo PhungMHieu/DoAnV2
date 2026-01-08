@@ -16,6 +16,7 @@ import {
   DebtItem,
   OwedToMeItem,
 } from './dto';
+import { GroupWebSocketGateway } from '@app/websocket-common';
 
 type SplitType = 'equal' | 'exact' | 'percent';
 
@@ -29,6 +30,7 @@ export class GroupExpenseService {
     private readonly dataSource: DataSource,
     private readonly transactionServiceService: TransactionServiceService,
     private readonly groupClientService: GroupClientService,
+    private readonly wsGateway: GroupWebSocketGateway,
   ) {}
 
   // ========== PUBLIC ==========
@@ -39,9 +41,11 @@ export class GroupExpenseService {
     amount: number;
     paidByMemberId: string;
     paidByUserId: string;
-    participants: { memberId: string; userId: string }[];
+    paidByMemberName: string;
+    participants: { memberId: string; userId: string; memberName: string }[];
     createdByUserId: string;
     category?: string;
+    date?: string;
   }): Promise<GroupExpense> {
     const {
       groupId,
@@ -49,9 +53,11 @@ export class GroupExpenseService {
       amount,
       paidByMemberId,
       paidByUserId,
+      paidByMemberName,
       participants,
       createdByUserId,
       category,
+      date,
     } = params;
 
     if (!participants?.length) {
@@ -68,7 +74,7 @@ export class GroupExpenseService {
     const shares = participants.map((p) => {
       const extra = remainder > 0 ? 1 : 0; // phân bổ phần dư
       remainder -= extra;
-      return { memberId: p.memberId, userId: p.userId, cents: base + extra };
+      return { memberId: p.memberId, userId: p.userId, memberName: p.memberName, cents: base + extra };
     });
 
     return this.persistExpenseWithShares({
@@ -76,18 +82,20 @@ export class GroupExpenseService {
       title,
       paidByMemberId,
       paidByUserId,
+      paidByMemberName,
       createdByUserId,
       splitType: 'equal',
       sharesCents: shares,
       category,
+      date,
     });
   }
 
   /**
    * body expected:
    * {
-   *   title, amount, paidByMemberId, paidByUserId, splitType:"exact",
-   *   exactSplits:[{memberId, userId, amount}]
+   *   title, amount, paidByMemberId, paidByUserId, paidByMemberName, splitType:"exact",
+   *   exactSplits:[{memberId, userId, memberName, amount}]
    * }
    */
   async createExpenseExactSplit(
@@ -102,7 +110,9 @@ export class GroupExpenseService {
       'paidByMemberId',
     );
     const paidByUserId = this.requireString(body?.paidByUserId, 'paidByUserId');
+    const paidByMemberName = this.requireString(body?.paidByMemberName, 'paidByMemberName');
     const category = body?.category;
+    const date = body?.date;
 
     const splits = body?.exactSplits;
     if (!Array.isArray(splits) || splits.length === 0) {
@@ -118,11 +128,15 @@ export class GroupExpenseService {
         s?.userId,
         `exactSplits[${idx}].userId`,
       );
+      const memberName = this.requireString(
+        s?.memberName,
+        `exactSplits[${idx}].memberName`,
+      );
       const shareAmount = this.requireNonNegativeNumber(
         s?.amount,
         `exactSplits[${idx}].amount`,
       );
-      return { memberId, userId, cents: this.toCents(shareAmount) };
+      return { memberId, userId, memberName, cents: this.toCents(shareAmount) };
     });
 
     const sumCents = sharesCents.reduce((acc, x) => acc + x.cents, 0);
@@ -139,18 +153,20 @@ export class GroupExpenseService {
       title,
       paidByMemberId,
       paidByUserId,
+      paidByMemberName,
       createdByUserId,
       splitType: 'exact',
       sharesCents,
       category,
+      date,
     });
   }
 
   /**
    * body expected:
    * {
-   *   title, amount, paidByMemberId, paidByUserId, splitType:"percent",
-   *   percentSplits:[{memberId, userId, percent}]
+   *   title, amount, paidByMemberId, paidByUserId, paidByMemberName, splitType:"percent",
+   *   percentSplits:[{memberId, userId, memberName, percent}]
    * }
    */
   async createExpensePercentSplit(
@@ -165,7 +181,9 @@ export class GroupExpenseService {
       'paidByMemberId',
     );
     const paidByUserId = this.requireString(body?.paidByUserId, 'paidByUserId');
+    const paidByMemberName = this.requireString(body?.paidByMemberName, 'paidByMemberName');
     const category = body?.category;
+    const date = body?.date;
 
     const splits = body?.percentSplits;
     if (!Array.isArray(splits) || splits.length === 0) {
@@ -184,11 +202,15 @@ export class GroupExpenseService {
         s?.userId,
         `percentSplits[${idx}].userId`,
       );
+      const memberName = this.requireString(
+        s?.memberName,
+        `percentSplits[${idx}].memberName`,
+      );
       const percent = this.requireNonNegativeNumber(
         s?.percent,
         `percentSplits[${idx}].percent`,
       );
-      return { memberId, userId, percent };
+      return { memberId, userId, memberName, percent };
     });
 
     const percentSum = raw.reduce((acc, x) => acc + x.percent, 0);
@@ -203,7 +225,7 @@ export class GroupExpenseService {
       const ideal = (totalCents * x.percent) / 100;
       const floor = Math.floor(ideal);
       const frac = ideal - floor;
-      return { memberId: x.memberId, userId: x.userId, floor, frac };
+      return { memberId: x.memberId, userId: x.userId, memberName: x.memberName, floor, frac };
     });
 
     const used = computed.reduce((acc, x) => acc + x.floor, 0);
@@ -215,6 +237,7 @@ export class GroupExpenseService {
     const sharesCents = computed.map((x) => ({
       memberId: x.memberId,
       userId: x.userId,
+      memberName: x.memberName,
       cents: x.floor,
     }));
 
@@ -235,10 +258,12 @@ export class GroupExpenseService {
       title,
       paidByMemberId,
       paidByUserId,
+      paidByMemberName,
       createdByUserId,
       splitType: 'percent',
       sharesCents,
       category,
+      date,
     });
   }
 
@@ -284,6 +309,7 @@ export class GroupExpenseService {
         totalAmount: share.expense.amount,
         myShare: share.amount,
         paidByMemberId: share.expense.paidByMemberId,
+        paidByMemberName: share.expense.paidByMemberName || `Member ${share.expense.paidByMemberId}`,
         createdAt: share.expense.createdAt,
         splitType: share.expense.splitType,
         isPaid: share.isPaid,
@@ -350,8 +376,8 @@ export class GroupExpenseService {
         debtorUserId,
         {
           amount: parseFloat(share.amount),
-          category: expense.category || 'Group Settlement',
-          note: `Paid for: ${expense.title}`,
+          category: expense.category || 'Other',
+          note: `Group: ${expense.title}`,
           dateTime: new Date(),
         } as any,
       );
@@ -362,18 +388,34 @@ export class GroupExpenseService {
         {
           amount: parseFloat(share.amount),
           category: 'Income',
-          note: `Received payment for: ${expense.title}`,
+          note: `Group: ${expense.title}`,
           dateTime: new Date(),
         } as any,
       );
 
-      return {
+      const result = {
         shareId: share.id,
         isPaid: share.isPaid,
         paidAt: share.paidAt,
         debtorTransactionId: debtorTx.id,
         payerTransactionId: payerTx.id,
       };
+
+      // Emit WebSocket event for share marked as paid
+      this.wsGateway.emitShareMarkedPaid({
+        groupId,
+        expenseId: expense.id,
+        shareId: share.id,
+        memberId: share.memberId,
+        memberName: share.memberName,
+        amount: share.amount,
+        paidByMemberId: expense.paidByMemberId,
+        paidByMemberName: expense.paidByMemberName,
+        paidAt: share.paidAt!,
+        timestamp: new Date(),
+      });
+
+      return result;
     });
   }
 
@@ -404,6 +446,7 @@ export class GroupExpenseService {
           totalAmount: expense.amount,
           shareAmount: share.amount,
           debtorMemberId: share.memberId,
+          debtorMemberName: share.memberName || `Member ${share.memberId}`,
           createdAt: expense.createdAt,
           isPaid: share.isPaid,
         });
@@ -467,16 +510,8 @@ export class GroupExpenseService {
         );
 
         for (const share of paidShares) {
-          let memberName = `Member ${share.memberId}`;
-          try {
-            const member = await this.groupClientService.getMemberById(
-              groupId,
-              parseInt(share.memberId),
-            );
-            memberName = member.name || memberName;
-          } catch {
-            // Ignore error
-          }
+          // Sử dụng memberName từ database thay vì gọi API
+          const memberName = share.memberName || `Member ${share.memberId}`;
 
           payments.push({
             date: share.paidAt || expense.createdAt,
@@ -502,16 +537,8 @@ export class GroupExpenseService {
       );
 
       if (myShare) {
-        let payerName = `Member ${expense.paidByMemberId}`;
-        try {
-          const payer = await this.groupClientService.getMemberById(
-            groupId,
-            parseInt(expense.paidByMemberId),
-          );
-          payerName = payer.name || payerName;
-        } catch {
-          // Ignore error
-        }
+        // Sử dụng paidByMemberName từ database thay vì gọi API
+        const payerName = expense.paidByMemberName || `Member ${expense.paidByMemberId}`;
 
         payments.push({
           date: myShare.paidAt || expense.createdAt,
@@ -550,20 +577,24 @@ export class GroupExpenseService {
     title: string;
     paidByMemberId: string;
     paidByUserId: string;
+    paidByMemberName: string;
     createdByUserId: string;
     splitType: SplitType;
-    sharesCents: { memberId: string; userId: string; cents: number }[];
+    sharesCents: { memberId: string; userId: string; memberName: string; cents: number }[];
     category?: string;
+    date?: string;
   }) {
     const {
       groupId,
       title,
       paidByMemberId,
       paidByUserId,
+      paidByMemberName,
       createdByUserId,
       splitType,
       sharesCents,
       category,
+      date,
     } = input;
 
     // validate memberId duplicates
@@ -576,25 +607,30 @@ export class GroupExpenseService {
 
     const totalCents = sharesCents.reduce((acc, s) => acc + s.cents, 0);
 
+    // Sử dụng ngày từ request, nếu không có thì dùng ngày hiện tại
+    const expenseDate = date ? new Date(date) : new Date();
+
     return this.dataSource.transaction(async (manager) => {
       const expense = manager.create(GroupExpense, {
         groupId,
         title,
         amount: this.fromCents(totalCents),
         paidByMemberId,
+        paidByMemberName,
         createdByUserId,
-        createdAt: new Date(),
+        createdAt: expenseDate,
         splitType,
         category,
       });
 
       const savedExpense = await manager.save(expense);
 
-      // Tạo shares với userId từ request (không cần lookup)
+      // Tạo shares với userId và memberName từ request
       const shares = sharesCents.map((s) =>
         manager.create(GroupExpenseShare, {
           expenseId: savedExpense.id,
           memberId: s.memberId,
+          memberName: s.memberName,
           amount: this.fromCents(s.cents),
           userId: s.userId,
           isPaid: s.memberId === paidByMemberId,
@@ -603,6 +639,30 @@ export class GroupExpenseService {
 
       await manager.save(shares);
       savedExpense.shares = shares;
+
+      // Emit WebSocket event for expense created
+      this.wsGateway.emitExpenseCreated({
+        groupId,
+        expense: {
+          id: savedExpense.id,
+          title: savedExpense.title,
+          amount: savedExpense.amount,
+          category: savedExpense.category,
+          paidByMemberId: savedExpense.paidByMemberId,
+          paidByMemberName: savedExpense.paidByMemberName,
+          splitType: savedExpense.splitType,
+          createdAt: savedExpense.createdAt,
+        },
+        shares: shares.map((s) => ({
+          id: s.id,
+          memberId: s.memberId,
+          memberName: s.memberName,
+          amount: s.amount,
+          isPaid: s.isPaid,
+        })),
+        createdByUserId,
+        timestamp: new Date(),
+      });
 
       // Tạo transaction cho người trả tiền
       if (paidByUserId) {
@@ -614,7 +674,7 @@ export class GroupExpenseService {
               amount: payerAmount,
               category: category || 'Group Expense',
               note: `Paid for group: ${title}`,
-              dateTime: new Date(),
+              dateTime: expenseDate,
             } as any,
           );
           console.log(

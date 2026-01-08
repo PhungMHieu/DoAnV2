@@ -25,8 +25,29 @@ interface DailyStatsResponse {
   stats: DailyStat[];
 }
 
+interface TransactionsByMonthRequest {
+  userId: string;
+  monthYear: string;
+}
+
+interface TransactionItem {
+  id: string;
+  userId: string;
+  amount: number;
+  category: string;
+  note: string;
+  dateTime: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TransactionsByMonthResponse {
+  transactions: TransactionItem[];
+}
+
 interface TransactionStatsService {
   getDailyStats(request: DailyStatsRequest): Observable<DailyStatsResponse>;
+  getTransactionsByMonth(request: TransactionsByMonthRequest): Observable<TransactionsByMonthResponse>;
 }
 
 @Injectable()
@@ -92,6 +113,36 @@ export class TransactionStatsGrpcClient implements OnModuleInit {
       return response.stats || [];
     } catch (error: any) {
       this.logger.error(`❌ [gRPC] Failed to fetch daily stats: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get transactions by month for summary calculation
+   */
+  async getTransactionsByMonth(
+    userId: string,
+    monthYear: string,
+  ): Promise<TransactionItem[]> {
+    try {
+      this.logger.log(
+        `📡 [gRPC] Fetching transactions for user ${userId}, month ${monthYear}`,
+      );
+
+      const response = await firstValueFrom(
+        this.transactionStatsService.getTransactionsByMonth({
+          userId,
+          monthYear,
+        }),
+      );
+
+      this.logger.log(
+        `✅ [gRPC] Retrieved ${response.transactions?.length || 0} transactions`,
+      );
+
+      return response.transactions || [];
+    } catch (error: any) {
+      this.logger.error(`❌ [gRPC] Failed to fetch transactions: ${error.message}`);
       throw error;
     }
   }

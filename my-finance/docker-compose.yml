@@ -81,14 +81,15 @@ services:
       - my-finance-network
     restart: unless-stopped
 
-  # ML Python Service (TF-IDF + SVM)
+  # ML Python Service (TF-IDF + SVM) - gRPC + HTTP
   ml-python:
     build:
       context: ./apps/ml-service/python-ml
       dockerfile: Dockerfile
     container_name: my-finance-ml-python
     ports:
-      - "5001:5000"
+      - "5001:5000"    # HTTP for health check
+      - "50052:50051"  # gRPC for ML predictions
     volumes:
       - ml_models:/app/models
     networks:
@@ -143,6 +144,8 @@ services:
       - RABBITMQ_URL=amqp://myfinance:myfinance_pass@rabbitmq:5672
       - RABBITMQ_QUEUE_PREFIX=myfinance
       - ML_SERVICE_URL=http://ml-service:3005
+      - ML_GRPC_URL=ml-python:50051
+      - USE_ML_MODEL=true
       - GROUP_SERVICE_URL=http://group-service:3004
     ports:
       - "3001:3001"
@@ -152,8 +155,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ml-service:
-        condition: service_started
+      ml-python:
+        condition: service_healthy
       group-service:
         condition: service_started
     networks:

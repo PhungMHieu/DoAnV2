@@ -20,6 +20,26 @@ interface DailyStatsResponse {
   stats: DailyStat[];
 }
 
+interface TransactionsByMonthRequest {
+  userId: string;
+  monthYear: string;
+}
+
+interface TransactionItem {
+  id: string;
+  userId: string;
+  amount: number;
+  category: string;
+  note: string;
+  dateTime: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TransactionsByMonthResponse {
+  transactions: TransactionItem[];
+}
+
 @Controller()
 export class TransactionStatsGrpcController {
   constructor(
@@ -57,5 +77,49 @@ export class TransactionStatsGrpcController {
     }));
 
     return { stats };
+  }
+
+  @GrpcMethod('TransactionStatsService', 'GetTransactionsByMonth')
+  async getTransactionsByMonth(
+    request: TransactionsByMonthRequest,
+  ): Promise<TransactionsByMonthResponse> {
+    const { userId, monthYear } = request;
+
+    // Parse monthYear (MM/YYYY)
+    const parts = monthYear.split('/');
+    if (parts.length !== 2) {
+      return { transactions: [] };
+    }
+
+    const month = parseInt(parts[0], 10);
+    const year = parseInt(parts[1], 10);
+
+    if (isNaN(month) || isNaN(year) || month < 1 || month > 12) {
+      return { transactions: [] };
+    }
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const transactions = await this.transactionRepository.find({
+      where: {
+        userId,
+        dateTime: Between(startDate, endDate),
+      },
+      order: { dateTime: 'DESC' },
+    });
+
+    const items: TransactionItem[] = transactions.map((tx) => ({
+      id: tx.id,
+      userId: tx.userId,
+      amount: parseFloat(String(tx.amount)),
+      category: tx.category,
+      note: tx.note || '',
+      dateTime: tx.dateTime.toISOString(),
+      createdAt: tx.dateTime.toISOString(), // Use dateTime as createdAt since entity doesn't have createdAt
+      updatedAt: tx.dateTime.toISOString(), // Use dateTime as updatedAt since entity doesn't have updatedAt
+    }));
+
+    return { transactions: items };
   }
 }

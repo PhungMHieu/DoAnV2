@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package ml;
+
+// ML Classifier Service
+service MlClassifier {
+  // Predict category for a single transaction
+  rpc Predict(PredictRequest) returns (PredictResponse);
+
+  // Predict categories for multiple transactions
+  rpc BatchPredict(BatchPredictRequest) returns (BatchPredictResponse);
+
+  // Train or retrain the model
+  rpc Train(TrainRequest) returns (TrainResponse);
+
+  // Health check
+  rpc CheckHealth(Empty) returns (HealthResponse);
+
+  // Get model information
+  rpc GetModelInfo(Empty) returns (ModelInfoResponse);
+
+  // Reload model from disk
+  rpc ReloadModel(Empty) returns (ReloadResponse);
+}
+
+// Empty message for requests without parameters
+message Empty {}
+
+// Predict request
+message PredictRequest {
+  string text = 1;
+  optional double amount = 2;
+}
+
+// Category suggestion
+message Suggestion {
+  string category = 1;
+  double confidence = 2;
+}
+
+// Predict response
+message PredictResponse {
+  string category = 1;
+  double confidence = 2;
+  repeated Suggestion suggestions = 3;
+  string model = 4;
+}
+
+// Batch predict request
+message BatchPredictRequest {
+  repeated string texts = 1;
+}
+
+// Batch predict response
+message BatchPredictResponse {
+  repeated PredictResponse predictions = 1;
+}
+
+// Train request
+message TrainRequest {
+  bool force = 1;
+}
+
+// Train response
+message TrainResponse {
+  bool success = 1;
+  optional double accuracy = 2;
+  optional double cv_mean = 3;
+  optional double cv_std = 4;
+  optional int32 samples = 5;
+  optional int32 categories = 6;
+  optional string error = 7;
+}
+
+// Health response
+message HealthResponse {
+  string status = 1;
+  bool model_loaded = 2;
+}
+
+// Model info response
+message ModelInfoResponse {
+  bool is_trained = 1;
+  repeated string categories = 2;
+  optional int32 n_categories = 3;
+  optional int32 vectorizer_features = 4;
+  optional string model_type = 5;
+  optional string kernel = 6;
+  optional string message = 7;
+}
+
+// Reload response
+message ReloadResponse {
+  bool success = 1;
+  bool is_trained = 2;
+}

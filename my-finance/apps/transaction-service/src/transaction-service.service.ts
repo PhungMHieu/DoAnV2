@@ -277,10 +277,10 @@ export class TransactionServiceService {
   }
 
   /**
-   * Analyze text and save transactions directly
+   * Analyze text and return transactions (without saving to database)
    */
   async analyzeAndSaveTransactions(userId: string, text: string) {
-    this.logger.log(`Analyzing and saving transactions for user ${userId}`);
+    this.logger.log(`Analyzing transactions for user ${userId}`);
 
     // Split text into sentences
     let rawSentences: string[] = [];
@@ -295,8 +295,14 @@ export class TransactionServiceService {
     }
     rawSentences = rawSentences.map((s) => s.trim()).filter((s) => s.length > 0);
 
-    // Analyze and save each transaction
-    const savedTransactions: TransactionEntity[] = [];
+    // Analyze each sentence and return formatted transactions (do not save)
+    const analyzedTransactions: Array<{
+      amount: number;
+      category: string;
+      note: string;
+      dateTime: Date;
+      userId: string;
+    }> = [];
     const now = new Date();
 
     for (const sentence of rawSentences) {
@@ -308,19 +314,17 @@ export class TransactionServiceService {
           amount,
         );
 
-        const saved = await this.createTransaction(userId, {
+        analyzedTransactions.push({
           amount,
           category,
           note: sentence,
           dateTime: now,
           userId,
-        } as TransactionEntity);
-
-        savedTransactions.push(saved);
+        });
       }
     }
 
-    return { transactions: savedTransactions };
+    return { transactions: analyzedTransactions };
   }
 
   async saveAnalyzedTransactions(
@@ -336,9 +340,10 @@ export class TransactionServiceService {
       `Saving ${transactions.length} analyzed transactions for user ${userId}`,
     );
 
-    const savedTransactions: TransactionEntity[] = [];
     const now = new Date();
+    const savedTransactions: TransactionEntity[] = [];
 
+    // Save each transaction to database
     for (const tx of transactions) {
       const saved = await this.createTransaction(userId, {
         amount: Math.abs(tx.amount),

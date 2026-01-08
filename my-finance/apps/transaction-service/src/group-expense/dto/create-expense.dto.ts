@@ -9,6 +9,8 @@ import {
   ArrayMinSize,
   ValidateNested,
   ValidateIf,
+  IsOptional,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -35,6 +37,14 @@ export class ParticipantDto {
   @IsString()
   @IsNotEmpty()
   userId: string;
+
+  @ApiProperty({
+    description: 'Tên member',
+    example: 'Nguyen Van A',
+  })
+  @IsString()
+  @IsNotEmpty()
+  memberName: string;
 }
 
 export class ExactSplitItemDto {
@@ -53,6 +63,14 @@ export class ExactSplitItemDto {
   @IsString()
   @IsNotEmpty()
   userId: string;
+
+  @ApiProperty({
+    description: 'Tên member',
+    example: 'Nguyen Van A',
+  })
+  @IsString()
+  @IsNotEmpty()
+  memberName: string;
 
   @ApiProperty({
     description: 'Amount for this member',
@@ -79,6 +97,14 @@ export class PercentSplitItemDto {
   @IsString()
   @IsNotEmpty()
   userId: string;
+
+  @ApiProperty({
+    description: 'Tên member',
+    example: 'Nguyen Van A',
+  })
+  @IsString()
+  @IsNotEmpty()
+  memberName: string;
 
   @ApiProperty({
     description: 'Percentage for this member (0-100)',
@@ -122,13 +148,30 @@ export class CreateExpenseDto {
   @IsNotEmpty({ message: 'paidByUserId is required' })
   paidByUserId: string;
 
+  @ApiProperty({
+    description: 'Tên người trả tiền',
+    example: 'Nguyen Van A',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'paidByMemberName is required' })
+  paidByMemberName: string;
+
   @ApiPropertyOptional({
     description:
       'Category of the expense (e.g., food, transport, entertainment)',
     example: 'food',
   })
   @IsString()
+  @IsOptional()
   category?: string;
+
+  @ApiPropertyOptional({
+    description: 'Date of the expense (ISO 8601 format)',
+    example: '2024-01-15T10:30:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 
   @ApiProperty({
     description: 'Split type',

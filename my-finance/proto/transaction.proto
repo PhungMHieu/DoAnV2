@@ -6,6 +6,9 @@ package transaction;
 service TransactionStatsService {
   // Get daily statistics for line chart
   rpc GetDailyStats(DailyStatsRequest) returns (DailyStatsResponse);
+
+  // Get transactions by month for summary calculation
+  rpc GetTransactionsByMonth(TransactionsByMonthRequest) returns (TransactionsByMonthResponse);
 }
 
 message DailyStatsRequest {
@@ -22,4 +25,27 @@ message DailyStat {
   string date = 1;        // Format: YYYY-MM-DD
   double income = 2;
   double expense = 3;
+}
+
+// Request for getting transactions by month
+message TransactionsByMonthRequest {
+  string user_id = 1;
+  string month_year = 2;  // Format: MM/YYYY
+}
+
+// Response containing list of transactions
+message TransactionsByMonthResponse {
+  repeated TransactionItem transactions = 1;
+}
+
+// Single transaction item
+message TransactionItem {
+  string id = 1;
+  string user_id = 2;
+  double amount = 3;
+  string category = 4;
+  string note = 5;
+  string date_time = 6;   // ISO format
+  string created_at = 7;
+  string updated_at = 8;
 }

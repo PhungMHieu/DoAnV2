@@ -28,7 +28,16 @@
       "Bash(npm install:*)",
       "Bash(kubectl rollout:*)",
       "Bash(kubectl delete:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:54932 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker system prune:*)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:54932 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker images:*)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:54932 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker build:*)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:54932 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker tag:*)",
+      "Bash(DOCKER_TLS_VERIFY=1 DOCKER_HOST=tcp://127.0.0.1:54932 DOCKER_CERT_PATH=/Users/admin/.minikube/certs docker run:*)",
+      "Bash(minikube ip:*)"
     ]
   }
 }

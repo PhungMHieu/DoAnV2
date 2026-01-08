@@ -6,7 +6,7 @@ metadata:
   labels:
     app: transaction-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: transaction-service
@@ -19,8 +19,12 @@ spec:
         - name: transaction-service
           image: my-finance/transaction-service:latest
           imagePullPolicy: IfNotPresent
+          command: ["node", "dist/apps/transaction-service/main"]
           ports:
             - containerPort: 3001
+              name: http
+            - containerPort: 50051
+              name: grpc
           envFrom:
             - configMapRef:
                 name: my-finance-config
@@ -37,23 +41,21 @@ spec:
                   key: RABBITMQ_URL
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
               memory: "256Mi"
-              cpu: "300m"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3001
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3001
             initialDelaySeconds: 30
-            periodSeconds: 10
+            periodSeconds: 15
 ---
 apiVersion: v1
 kind: Service
@@ -66,4 +68,8 @@ spec:
   ports:
     - port: 3001
       targetPort: 3001
+      name: http
+    - port: 50051
+      targetPort: 50051
+      name: grpc
   type: ClusterIP

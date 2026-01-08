@@ -30,6 +30,10 @@ export class GroupExpense {
   @Column()
   paidByMemberId: string;
 
+  // Tên member lúc tạo expense (để hiển thị khi member rời nhóm)
+  @Column({ nullable: true })
+  paidByMemberName: string;
+
   // optional: lưu user tạo expense
   @Column()
   createdByUserId: string;

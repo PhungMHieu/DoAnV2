@@ -27,6 +27,10 @@ export class GroupExpenseShare {
   @Index()
   memberId: string;
 
+  // Tên member lúc tạo expense (để hiển thị khi member rời nhóm)
+  @Column({ nullable: true })
+  memberName: string;
+
   // Số tiền mà member này phải chịu (sau khi tính từ kiểu split)
   @Column('numeric', { precision: 18, scale: 2 })
   amount: string;

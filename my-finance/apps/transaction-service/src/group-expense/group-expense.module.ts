@@ -8,6 +8,7 @@ import { GroupExpenseController } from './group-expense.controller';
 import { GroupBalanceController } from './group-balance.controller';
 import { GroupBalanceService } from './group-balance.service';
 import { GroupClientService } from './group-client.service';
+import { WebSocketCommonModule } from '@app/websocket-common';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { GroupClientService } from './group-client.service';
       timeout: 5000,
       maxRedirects: 5,
     }),
+    WebSocketCommonModule,
   ],
   providers: [GroupExpenseService, GroupBalanceService, GroupClientService],
   controllers: [GroupExpenseController, GroupBalanceController],

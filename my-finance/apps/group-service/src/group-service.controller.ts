@@ -406,6 +406,7 @@ export class GroupServiceController {
     @Param('groupId') groupId: string,
     @Body('memberName') memberName: string,
     @Body('userId') memberUserId: string | undefined,
+    @Body('addedByMemberName') addedByMemberName: string | undefined,
     @Req() req: Request,
   ) {
     const userId = getUserIdFromRequest(req);
@@ -419,6 +420,8 @@ export class GroupServiceController {
       groupId,
       memberName.trim(),
       memberUserId,
+      userId, // addedByUserId - the current user adding the member
+      addedByMemberName,
     );
 
     return {
@@ -427,6 +430,49 @@ export class GroupServiceController {
       userId: member.userId,
       joined: member.joined,
       joinedAt: member.joinedAt,
+    };
+  }
+
+  @Delete(':groupId/members/:memberId')
+  @ApiOperation({
+    summary: 'Remove a member from group',
+    description:
+      'Remove a member from the group. Only the group owner can remove members. Cannot remove yourself (use leave endpoint instead).',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiParam({ name: 'memberId', description: 'Member ID to remove' })
+  @ApiResponse({
+    status: 200,
+    description: 'Member removed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Member removed successfully' },
+        removedMemberId: { type: 'number', example: 123 },
+        removedMemberName: { type: 'string', example: 'John' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Cannot remove yourself or not authorized' })
+  @ApiResponse({ status: 404, description: 'Group or member not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async removeMember(
+    @Param('groupId') groupId: string,
+    @Param('memberId') memberId: string,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    const result = await this.groupsService.removeMemberFromGroup(
+      userId,
+      groupId,
+      parseInt(memberId, 10),
+    );
+
+    return {
+      message: 'Member removed successfully',
+      ...result,
     };
   }
 
@@ -544,5 +590,269 @@ export class GroupServiceController {
     await this.groupsService.deleteGroup(userId, groupId);
 
     return { message: 'Group deleted successfully' };
+  }
+
+  // ========== Invitation Endpoints ==========
+
+  @Post(':groupId/invitations')
+  @ApiOperation({
+    summary: 'Invite a user to a group',
+    description:
+      'Send an invitation to a user to join a group. The invited user can accept or reject.',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiResponse({
+    status: 201,
+    description: 'Invitation sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', example: 1 },
+        invitedUserId: { type: 'string', example: 'user-456' },
+        suggestedMemberName: { type: 'string', example: 'John Doe' },
+        status: { type: 'string', example: 'pending' },
+        expiresAt: { type: 'string', format: 'date-time', nullable: true },
+        createdAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'User is already a member or has pending invitation' })
+  @ApiResponse({ status: 404, description: 'Group not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async inviteUserToGroup(
+    @Param('groupId') groupId: string,
+    @Body('invitedUserId') invitedUserId: string,
+    @Body('suggestedMemberName') suggestedMemberName: string,
+    @Body('invitedByMemberName') invitedByMemberName: string | undefined,
+    @Body('expiresInDays') expiresInDays: number | undefined,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    if (!invitedUserId || !invitedUserId.trim()) {
+      throw new BadRequestException('invitedUserId is required');
+    }
+
+    if (!suggestedMemberName || !suggestedMemberName.trim()) {
+      throw new BadRequestException('suggestedMemberName is required');
+    }
+
+    const invitation = await this.groupsService.inviteUserToGroup(
+      groupId,
+      invitedUserId.trim(),
+      suggestedMemberName.trim(),
+      userId,
+      invitedByMemberName?.trim(),
+      expiresInDays,
+    );
+
+    return {
+      id: invitation.id,
+      invitedUserId: invitation.invitedUserId,
+      suggestedMemberName: invitation.suggestedMemberName,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      createdAt: invitation.createdAt,
+    };
+  }
+
+  @Get(':groupId/invitations')
+  @ApiOperation({
+    summary: 'Get pending invitations for a group',
+    description: 'Returns all pending invitations for the specified group.',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending invitations retrieved successfully',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', example: 1 },
+          invitedUserId: { type: 'string', example: 'user-456' },
+          suggestedMemberName: { type: 'string', example: 'John Doe' },
+          invitedByUserId: { type: 'string', example: 'user-123' },
+          invitedByMemberName: { type: 'string', nullable: true, example: 'Alice' },
+          status: { type: 'string', example: 'pending' },
+          expiresAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  })
+  async getGroupInvitations(@Param('groupId') groupId: string) {
+    const invitations = await this.groupsService.getPendingInvitationsForGroup(groupId);
+
+    return invitations.map((inv) => ({
+      id: inv.id,
+      invitedUserId: inv.invitedUserId,
+      suggestedMemberName: inv.suggestedMemberName,
+      invitedByUserId: inv.invitedByUserId,
+      invitedByMemberName: inv.invitedByMemberName,
+      status: inv.status,
+      expiresAt: inv.expiresAt,
+      createdAt: inv.createdAt,
+    }));
+  }
+
+  @Delete(':groupId/invitations/:invitationId')
+  @ApiOperation({
+    summary: 'Cancel an invitation',
+    description:
+      'Cancel a pending invitation. Only the inviter or group owner can cancel.',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiParam({ name: 'invitationId', description: 'Invitation ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Invitation cancelled successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Invitation cancelled successfully' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Not authorized or invitation already responded' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async cancelInvitation(
+    @Param('groupId') _groupId: string,
+    @Param('invitationId') invitationId: string,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    await this.groupsService.cancelInvitation(parseInt(invitationId, 10), userId);
+
+    return { message: 'Invitation cancelled successfully' };
+  }
+
+  @Get('invitations/my')
+  @ApiOperation({
+    summary: 'Get my pending invitations',
+    description: 'Returns all pending invitations for the current user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending invitations retrieved successfully',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', example: 1 },
+          groupId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+          groupName: { type: 'string', example: 'Family Budget Group' },
+          groupCode: { type: 'string', example: 'ABC123' },
+          suggestedMemberName: { type: 'string', example: 'John Doe' },
+          invitedByUserId: { type: 'string', example: 'user-123' },
+          invitedByMemberName: { type: 'string', nullable: true, example: 'Alice' },
+          status: { type: 'string', example: 'pending' },
+          expiresAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async getMyInvitations(@Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    const invitations = await this.groupsService.getPendingInvitationsForUser(userId);
+
+    return invitations.map((inv) => ({
+      id: inv.id,
+      groupId: inv.group.id,
+      groupName: inv.group.name,
+      groupCode: inv.group.code,
+      suggestedMemberName: inv.suggestedMemberName,
+      invitedByUserId: inv.invitedByUserId,
+      invitedByMemberName: inv.invitedByMemberName,
+      status: inv.status,
+      expiresAt: inv.expiresAt,
+      createdAt: inv.createdAt,
+    }));
+  }
+
+  @Post('invitations/:invitationId/accept')
+  @ApiOperation({
+    summary: 'Accept an invitation',
+    description:
+      'Accept a pending invitation and join the group. Optionally provide a custom member name.',
+  })
+  @ApiParam({ name: 'invitationId', description: 'Invitation ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Invitation accepted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Successfully joined the group' },
+        groupId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+        memberId: { type: 'number', example: 1 },
+        memberName: { type: 'string', example: 'John Doe' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invitation not for you, expired, or already responded' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async acceptInvitation(
+    @Param('invitationId') invitationId: string,
+    @Body('memberName') memberName: string | undefined,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    const member = await this.groupsService.acceptInvitation(
+      parseInt(invitationId, 10),
+      userId,
+      memberName?.trim(),
+    );
+
+    return {
+      message: 'Successfully joined the group',
+      groupId: member.group?.id,
+      memberId: member.id,
+      memberName: member.name,
+    };
+  }
+
+  @Post('invitations/:invitationId/reject')
+  @ApiOperation({
+    summary: 'Reject an invitation',
+    description: 'Reject a pending invitation.',
+  })
+  @ApiParam({ name: 'invitationId', description: 'Invitation ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Invitation rejected successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Invitation rejected' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invitation not for you or already responded' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT token' })
+  async rejectInvitation(
+    @Param('invitationId') invitationId: string,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    await this.groupsService.rejectInvitation(parseInt(invitationId, 10), userId);
+
+    return { message: 'Invitation rejected' };
   }
 }

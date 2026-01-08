@@ -4,7 +4,8 @@ metadata:
   name: my-finance-ingress
   namespace: my-finance
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: $1
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-user-id"
@@ -15,8 +16,8 @@ spec:
     - host: my-finance.local
       http:
         paths:
-          # Auth Service (public)
-          - path: /api/auth(/|$)(.*)
+          # Auth Service - /api/auth/login -> /auth/login
+          - path: /api(/auth/.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -24,8 +25,8 @@ spec:
                 port:
                   number: 3002
 
-          # Transaction Service
-          - path: /api/transactions(/|$)(.*)
+          # Transaction Service - /api/transactions/... -> /transactions/...
+          - path: /api(/transactions/.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -33,8 +34,8 @@ spec:
                 port:
                   number: 3001
 
-          # Account (part of transaction service)
-          - path: /api/account(/|$)(.*)
+          # Account - /api/account/... -> /account/...
+          - path: /api(/account/.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -42,8 +43,8 @@ spec:
                 port:
                   number: 3001
 
-          # Report Service
-          - path: /api/reports(/|$)(.*)
+          # Report Service - /api/reports/... -> /reports/...
+          - path: /api(/reports/.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -51,8 +52,8 @@ spec:
                 port:
                   number: 3003
 
-          # Group Service
-          - path: /api/groups(/|$)(.*)
+          # Group Service - /api/groups/... -> /groups/...
+          - path: /api(/groups/.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -60,20 +61,11 @@ spec:
                 port:
                   number: 3004
 
-          # ML Service
-          - path: /api/ml(/|$)(.*)
+          # ML Service - /api/ml/... -> /ml/...
+          - path: /api(/ml/.*)
             pathType: ImplementationSpecific
             backend:
               service:
-                name: ml-service
+                name: recommend-service
                 port:
                   number: 3005
-
-          # API Gateway (fallback)
-          - path: /(.*)
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: api-gateway
-                port:
-                  number: 3000

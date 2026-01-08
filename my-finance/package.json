@@ -30,8 +30,10 @@
     "@nestjs/microservices": "^11.1.9",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/platform-socket.io": "^11.1.11",
     "@nestjs/swagger": "^11.2.3",
     "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/websockets": "^11.1.11",
     "amqp-connection-manager": "^5.0.0",
     "amqplib": "^0.10.9",
     "axios": "^1.13.2",
@@ -45,6 +47,7 @@
     "redis": "^5.10.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.28"
   },
@@ -102,7 +105,8 @@
       "^@app/redis(|/.*)$": "<rootDir>/libs/common/redis/src/$1",
       "^@app/redis-common(|/.*)$": "<rootDir>/libs/redis-common/src/$1",
       "^@app/rmq-common(|/.*)$": "<rootDir>/libs/rmq-common/src/$1",
-      "^@app/swagger(|/.*)$": "<rootDir>/libs/swagger/src/$1"
+      "^@app/swagger(|/.*)$": "<rootDir>/libs/swagger/src/$1",
+      "^@app/websocket-common(|/.*)$": "<rootDir>/libs/websocket-common/src/$1"
     }
   }
 }

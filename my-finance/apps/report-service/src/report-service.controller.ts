@@ -168,42 +168,4 @@ export class ReportServiceController {
     const userId = this.getUserId(req);
     return this.reportService.getLineStats(userId, monthYear);
   }
-
-  @Get('stats/pie')
-  @ApiOperation({
-    summary: 'Get pie chart statistics',
-    description:
-      'Retrieves expense breakdown by category for pie chart visualization',
-  })
-  @ApiQuery({
-    name: 'monthYear',
-    description: 'Month and year in MM/YYYY format',
-    example: '12/2024',
-    required: true,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Pie chart data retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        month: { type: 'string', example: '12/2024' },
-        currency: { type: 'string', example: 'VND' },
-        data: {
-          type: 'object',
-          example: {
-            food: 150000,
-            transport: 80000,
-            entertainment: 120000,
-          },
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 400, description: 'Invalid monthYear format' })
-  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
-  async getPie(@Req() req: Request, @Query('monthYear') monthYear: string) {
-    const userId = this.getUserId(req);
-    return this.reportService.getPieStats(userId, monthYear);
-  }
 }

@@ -106,6 +106,15 @@
         "tsConfigPath": "libs/swagger/tsconfig.lib.json"
       }
     },
+    "websocket-common": {
+      "type": "library",
+      "root": "libs/websocket-common",
+      "entryFile": "index",
+      "sourceRoot": "libs/websocket-common/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/websocket-common/tsconfig.lib.json"
+      }
+    },
     "transaction-service": {
       "type": "application",
       "root": "apps/transaction-service",

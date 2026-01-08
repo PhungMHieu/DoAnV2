@@ -9,6 +9,7 @@ data:
   # Service Ports
   AUTH_SERVICE_PORT: "3002"
   TRANSACTION_SERVICE_PORT: "3001"
+  TRANSACTION_GRPC_PORT: "50051"
   REPORT_SERVICE_PORT: "3003"
   GROUP_SERVICE_PORT: "3004"
   ML_SERVICE_PORT: "3005"
@@ -17,10 +18,12 @@ data:
   # Service URLs (internal K8s DNS)
   AUTH_SERVICE_URL: http://auth-service:3002
   TRANSACTION_SERVICE_URL: http://transaction-service:3001
+  TRANSACTION_GRPC_URL: transaction-service:50051
   REPORT_SERVICE_URL: http://report-service:3003
   GROUP_SERVICE_URL: http://group-service:3004
   ML_SERVICE_URL: http://ml-service:3005
   ML_API_URL: http://ml-python:5000
+  ML_GRPC_URL: ml-python:50051
 
   # Redis
   REDIS_HOST: redis
@@ -34,3 +37,6 @@ data:
   # ML
   USE_ML_MODEL: "true"
   USE_ENHANCED_KEYWORD: "true"
+
+  # Currency
+  DEFAULT_CURRENCY: VND

@@ -78,6 +78,9 @@ export class DebtItem {
   @ApiProperty({ description: 'Member ID người đã trả' })
   paidByMemberId: string;
 
+  @ApiProperty({ description: 'Tên người đã trả' })
+  paidByMemberName: string;
+
   @ApiProperty({ description: 'Ngày tạo' })
   createdAt: Date;
 
@@ -106,6 +109,9 @@ export class OwedToMeItem {
 
   @ApiProperty({ description: 'Member ID người nợ' })
   debtorMemberId: string;
+
+  @ApiProperty({ description: 'Tên người nợ' })
+  debtorMemberName: string;
 
   @ApiProperty({ description: 'Ngày tạo' })
   createdAt: Date;

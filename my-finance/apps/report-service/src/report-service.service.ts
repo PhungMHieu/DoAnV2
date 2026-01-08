@@ -9,7 +9,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { TransactionEventDto } from './dto';
-import { TransactionClientService } from './transaction-client.service';
 import { TransactionStatsGrpcClient } from './grpc/transaction-stats.client';
 
 type TransactionType = 'INCOME' | 'EXPENSE';
@@ -24,7 +23,6 @@ export class ReportServiceService {
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
     private readonly configService: ConfigService,
-    private readonly transactionClient: TransactionClientService,
     private readonly grpcClient: TransactionStatsGrpcClient,
   ) {}
 
@@ -321,7 +319,7 @@ export class ReportServiceService {
   }
 
   /**
-   * Rebuild cache from Transaction Service (SSOT)
+   * Rebuild cache from Transaction Service (SSOT) via gRPC
    */
   private async rebuildCacheFromSSoT(
     userId: string,
@@ -330,11 +328,11 @@ export class ReportServiceService {
     month: number,
   ): Promise<any> {
     this.logger.log(
-      `🔄 [Rebuild Cache] Querying Transaction Service for ${monthYear}`,
+      `🔄 [Rebuild Cache] Querying Transaction Service via gRPC for ${monthYear}`,
     );
 
-    // Query SSOT
-    const transactions = await this.transactionClient.getTransactionsByMonth(
+    // Query SSOT via gRPC instead of HTTP
+    const transactions = await this.grpcClient.getTransactionsByMonth(
       userId,
       monthYear,
     );
@@ -373,6 +371,7 @@ export class ReportServiceService {
     forceRefresh: boolean = false,
   ) {
     const { month, year } = this.parseMonthYear(monthYear);
+    // lưu lại dưới dạng summary key
     const summaryKey = this.getSummaryKey(userId, year, month);
 
     // ========== PATTERN: Cache-Aside with Fallback ==========
@@ -506,87 +505,6 @@ export class ReportServiceService {
     return {
       currentMonth,
       previousMonth,
-    };
-  }
-
-  // ========== /stats/pie ==========
-
-  async getPieStats(userId: string, monthYear: string) {
-    const { month, year } = this.parseMonthYear(monthYear);
-    const summaryKey = this.getSummaryKey(userId, year, month);
-    const hash = await this.redis.hgetall(summaryKey);
-
-    const defaultCurrency =
-      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
-    const currency = hash.currency || defaultCurrency;
-    const data: Record<string, number> = {};
-
-    for (const [field, value] of Object.entries(hash)) {
-      if (field.startsWith('category:')) {
-        const category = field.substring('category:'.length);
-        data[category] = parseFloat(value);
-      }
-    }
-
-    const monthStr = month.toString().padStart(2, '0');
-    const displayMonthYear = `${monthStr}/${year}`;
-
-    return {
-      month: displayMonthYear,
-      currency,
-      data,
-    };
-  }
-
-  // ========== ADMIN: Force Cache Rebuild ==========
-
-  async rebuildCache(userId: string, monthYear: string) {
-    const { month, year } = this.parseMonthYear(monthYear);
-    const summaryKey = this.getSummaryKey(userId, year, month);
-    const dailyKey = this.getDailyKey(userId, year, month);
-
-    this.logger.log(`🔧 [Admin] Force rebuilding cache for ${summaryKey}`);
-
-    // Delete existing cache
-    await this.redis.del(summaryKey);
-    await this.redis.del(dailyKey);
-
-    // Rebuild from SSOT
-    const transactions = await this.transactionClient.getTransactionsByMonth(
-      userId,
-      monthYear,
-    );
-    const aggregated = this.aggregateTransactions(transactions);
-
-    // Build hash data for Redis
-    const defaultCurrency =
-      this.configService.get<string>('DEFAULT_CURRENCY') || 'VND';
-    const hashData: Record<string, string> = {
-      currency: defaultCurrency,
-      'income:total': aggregated.incomeTotal.toString(),
-      'expense:total': aggregated.expenseTotal.toString(),
-    };
-
-    // Add category breakdown
-    for (const [category, amount] of Object.entries(
-      aggregated.categoryBreakdown,
-    )) {
-      hashData[`category:${category}`] = amount.toString();
-    }
-
-    // Update cache (2 hour TTL)
-    await this.tryUpdateCache(summaryKey, hashData, 7200);
-
-    // Also rebuild daily cache for line chart
-    await this.rebuildDailyCache(userId, year, month, transactions);
-
-    this.logger.log(
-      `✅ [Admin] Cache rebuilt: ${transactions.length} transactions processed`,
-    );
-
-    return {
-      transactionsProcessed: transactions.length,
-      cacheKey: summaryKey,
     };
   }
 
