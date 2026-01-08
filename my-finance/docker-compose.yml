@@ -150,6 +150,8 @@ services:
     ports:
       - "3001:3001"
       - "50051:50051"
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -335,6 +337,8 @@ volumes:
   ml_models:
     driver: local
   redis_insight_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:

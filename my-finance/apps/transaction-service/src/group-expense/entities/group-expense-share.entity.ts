@@ -46,4 +46,17 @@ export class GroupExpenseShare {
   // Denormalized userId for faster settlement processing
   @Column({ type: 'varchar', nullable: true })
   userId: string | null;
+
+  // Payment proof fields
+  @Column({ type: 'varchar', nullable: true })
+  proofImageUrl: string | null;
+
+  @Column({
+    type: 'varchar',
+    default: 'none',
+  })
+  proofStatus: 'none' | 'pending' | 'approved' | 'rejected';
+
+  @Column({ type: 'timestamptz', nullable: true })
+  proofUploadedAt: Date | null;
 }

@@ -1,16 +1,22 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { TransactionServiceModule } from './transaction-service.module';
 import { setupSwagger } from '@app/swagger';
 import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(TransactionServiceModule);
+  const app = await NestFactory.create<NestExpressApplication>(TransactionServiceModule);
 
   // Enable CORS
   app.enableCors({
     origin: true, // Allow all origins in development
     credentials: true,
+  });
+
+  // Serve static files for uploaded proofs
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+    prefix: '/uploads/',
   });
 
   // Setup Swagger documentation

@@ -7,6 +7,7 @@ import {
   Index,
 } from 'typeorm';
 import { GroupExpenseShare } from './group-expense-share.entity';
+import { TransactionEntity } from '../../entities/transaction.entity';
 
 @Entity('group_expenses')
 export class GroupExpense {
@@ -19,12 +20,6 @@ export class GroupExpense {
 
   @Column()
   title: string;
-
-  @Column('numeric', { precision: 18, scale: 2 })
-  amount: string;
-
-  @Column({ nullable: true })
-  category: string; // Category of the expense (e.g., "food", "transport")
 
   // Ai trả tiền – tham chiếu GroupMember.id
   @Column()
@@ -41,6 +36,12 @@ export class GroupExpense {
   @Column({ type: 'timestamptz' })
   createdAt: Date;
 
+  // Danh sách transactions thuộc expense này
+  // Không dùng cascade: true để tránh xóa transactions khi expense bị xóa
+  // và ngược lại - GroupExpense không bị ảnh hưởng khi Transaction bị xóa
+  @OneToMany(() => TransactionEntity, (transaction) => transaction.groupExpense)
+  transactions: TransactionEntity[];
+
   @OneToMany(
     () => GroupExpenseShare,
     (share: GroupExpenseShare) => share.expense,
@@ -50,4 +51,12 @@ export class GroupExpense {
 
   @Column({ default: 'equal' })
   splitType: 'equal' | 'exact' | 'percent';
+
+  // Getter để tính tổng amount từ transactions
+  get totalAmount(): number {
+    if (!this.transactions || this.transactions.length === 0) {
+      return 0;
+    }
+    return this.transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  }
 }

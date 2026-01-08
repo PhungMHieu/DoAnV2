@@ -20,6 +20,41 @@ export enum SplitType {
   PERCENT = 'percent',
 }
 
+// Transaction item trong expense
+export class TransactionItemDto {
+  @ApiProperty({
+    description: 'Amount of the transaction',
+    example: 100000,
+  })
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @ApiProperty({
+    description: 'Category of the transaction',
+    example: 'food',
+  })
+  @IsString()
+  @IsNotEmpty()
+  category: string;
+
+  @ApiPropertyOptional({
+    description: 'Note for the transaction',
+    example: 'Dinner at restaurant',
+  })
+  @IsString()
+  @IsOptional()
+  note?: string;
+
+  @ApiPropertyOptional({
+    description: 'Date time of the transaction',
+    example: '2024-01-15T10:30:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateTime?: string;
+}
+
 // Participant với cả memberId và userId
 export class ParticipantDto {
   @ApiProperty({
@@ -125,12 +160,18 @@ export class CreateExpenseDto {
   title: string;
 
   @ApiProperty({
-    description: 'Total expense amount',
-    example: 500.0,
+    description: 'List of transactions in this expense',
+    type: [TransactionItemDto],
+    example: [
+      { amount: 200000, category: 'food', note: 'Main course' },
+      { amount: 50000, category: 'food', note: 'Drinks' },
+    ],
   })
-  @IsNumber()
-  @IsPositive({ message: 'amount must be a positive number' })
-  amount: number;
+  @IsArray()
+  @ArrayMinSize(1, { message: 'transactions must have at least 1 item' })
+  @ValidateNested({ each: true })
+  @Type(() => TransactionItemDto)
+  transactions: TransactionItemDto[];
 
   @ApiProperty({
     description: 'Member ID who paid for this expense',
@@ -155,15 +196,6 @@ export class CreateExpenseDto {
   @IsString()
   @IsNotEmpty({ message: 'paidByMemberName is required' })
   paidByMemberName: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Category of the expense (e.g., food, transport, entertainment)',
-    example: 'food',
-  })
-  @IsString()
-  @IsOptional()
-  category?: string;
 
   @ApiPropertyOptional({
     description: 'Date of the expense (ISO 8601 format)',

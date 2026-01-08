@@ -34,13 +34,13 @@ export class GroupBalanceService {
   async getNetPerMember(groupId: string): Promise<NetRecord[]> {
     const expenses = await this.expenseRepo.find({
       where: { groupId },
-      relations: ['shares'],
+      relations: ['shares', 'transactions'],
     });
 
     const netMap = new Map<string, number>();
 
     for (const exp of expenses) {
-      const total = Number(exp.amount);
+      const total = exp.totalAmount;
 
       // Người trả tiền chi toàn bộ
       netMap.set(

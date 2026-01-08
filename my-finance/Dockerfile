@@ -62,6 +62,9 @@ COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=build --chown=nestjs:nodejs /app/proto ./proto
 
+# Create uploads directory for file uploads
+RUN mkdir -p /app/uploads/proofs && chown -R nestjs:nodejs /app/uploads
+
 # Switch to non-root user
 USER nestjs
 

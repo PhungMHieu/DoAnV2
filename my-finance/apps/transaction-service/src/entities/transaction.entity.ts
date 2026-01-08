@@ -5,12 +5,16 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
+import { GroupExpense } from '../group-expense/entities/group-expense.entity';
 
 @Entity('transactions')
 @Index(['userId'])
 @Index(['userId', 'dateTime'])
+@Index(['groupExpenseId'])
 export class TransactionEntity {
   @ApiProperty({
     description: 'Unique identifier for the transaction',
@@ -64,4 +68,15 @@ export class TransactionEntity {
   })
   @Column({ type: 'timestamptz', name: 'date_time' })
   dateTime: Date;
+
+  // Relation với GroupExpense (nullable - transaction có thể không thuộc group nào)
+  @Column({ type: 'uuid', nullable: true })
+  groupExpenseId: string | null;
+
+  @ManyToOne(() => GroupExpense, (expense) => expense.transactions, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'groupExpenseId' })
+  groupExpense: GroupExpense | null;
 }

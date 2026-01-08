@@ -7,20 +7,26 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GroupExpenseService } from './group-expense.service';
 import { getUserIdFromRequest } from '@app/common/middleware/jwt-extract.middleware';
-import { CreateExpenseDto, SplitType } from './dto';
+import { CreateExpenseDto, SplitType, UploadProofDto } from './dto';
 import { MarkPaidDto } from './dto/mark-paid.dto';
 import { GroupClientService } from './group-client.service';
+import 'multer';
 
 @ApiTags('Group Expenses')
 @Controller('groups/:groupId/expenses')
@@ -53,6 +59,14 @@ export class GroupExpenseController {
       throw new BadRequestException('paidByMemberId cannot be empty');
     }
 
+    // Parse transactions from DTO
+    const transactions = dto.transactions.map((tx) => ({
+      amount: tx.amount,
+      category: tx.category,
+      note: tx.note,
+      dateTime: tx.dateTime ? new Date(tx.dateTime) : undefined,
+    }));
+
     if (dto.splitType === SplitType.EQUAL) {
       // Validate participants
       if (!dto.participants || dto.participants.length === 0) {
@@ -72,13 +86,12 @@ export class GroupExpenseController {
       return this.groupExpenseService.createExpenseEqualSplit({
         groupId,
         title: dto.title.trim(),
-        amount: dto.amount,
+        transactions,
         paidByMemberId,
         paidByUserId: dto.paidByUserId,
         paidByMemberName: dto.paidByMemberName,
         participants: dto.participants,
         createdByUserId: userId,
-        category: dto.category,
         date: dto.date,
       });
     }
@@ -102,12 +115,11 @@ export class GroupExpenseController {
         groupId,
         {
           title: dto.title.trim(),
-          amount: dto.amount,
+          transactions,
           paidByMemberId,
           paidByUserId: dto.paidByUserId,
           paidByMemberName: dto.paidByMemberName,
           exactSplits: dto.exactSplits,
-          category: dto.category,
           date: dto.date,
         },
         userId,
@@ -133,12 +145,11 @@ export class GroupExpenseController {
       groupId,
       {
         title: dto.title.trim(),
-        amount: dto.amount,
+        transactions,
         paidByMemberId,
         paidByUserId: dto.paidByUserId,
         paidByMemberName: dto.paidByMemberName,
         percentSplits: dto.percentSplits,
-        category: dto.category,
         date: dto.date,
       },
       userId,
@@ -148,9 +159,179 @@ export class GroupExpenseController {
   @Get()
   @ApiOperation({ summary: 'Get all expenses of a group' })
   @ApiParam({ name: 'groupId', description: 'Group ID' })
-  @ApiResponse({ status: 200, description: 'List of expenses' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of expenses with transactions',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          title: { type: 'string', example: 'Dinner at restaurant' },
+          groupId: { type: 'string', format: 'uuid' },
+          paidByMemberId: { type: 'string' },
+          paidByMemberName: { type: 'string' },
+          splitType: { type: 'string', enum: ['equal', 'exact', 'percent'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          totalAmount: { type: 'number', example: 250000 },
+          transactions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                amount: { type: 'number', example: 200000 },
+                category: { type: 'string', example: 'food' },
+                note: { type: 'string', example: 'Main course' },
+                dateTime: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+          shares: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                memberId: { type: 'string' },
+                memberName: { type: 'string' },
+                amount: { type: 'string', example: '83333.33' },
+                isPaid: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
   async getExpenses(@Param('groupId') groupId: string) {
     return this.groupExpenseService.getExpensesOfGroup(groupId);
+  }
+
+  @Get('my-expenses')
+  @ApiOperation({
+    summary: 'Get my expenses in this group',
+    description:
+      'Returns all expenses where the current user is involved (as payer or participant)',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of expenses for the current user',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          title: { type: 'string', example: 'Dinner at restaurant' },
+          groupId: { type: 'string', format: 'uuid' },
+          paidByMemberId: { type: 'string' },
+          paidByMemberName: { type: 'string' },
+          splitType: { type: 'string', enum: ['equal', 'exact', 'percent'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          totalAmount: { type: 'number', example: 250000 },
+          transactions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                amount: { type: 'number', example: 200000 },
+                category: { type: 'string', example: 'food' },
+                note: { type: 'string', example: 'Main course' },
+                dateTime: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+          shares: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                memberId: { type: 'string' },
+                memberName: { type: 'string' },
+                amount: { type: 'string', example: '83333.33' },
+                isPaid: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing or invalid JWT token',
+  })
+  async getMyExpenses(@Param('groupId') groupId: string, @Req() req: Request) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    const authHeader = req.headers.authorization || '';
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
+
+    return this.groupExpenseService.getMyExpenses(groupId, String(memberId));
+  }
+
+  @Get(':expenseId')
+  @ApiOperation({ summary: 'Get expense detail by ID' })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiParam({ name: 'expenseId', description: 'Expense ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Expense detail with transactions',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        title: { type: 'string', example: 'Dinner at restaurant' },
+        groupId: { type: 'string', format: 'uuid' },
+        paidByMemberId: { type: 'string' },
+        paidByMemberName: { type: 'string' },
+        splitType: { type: 'string', enum: ['equal', 'exact', 'percent'] },
+        createdAt: { type: 'string', format: 'date-time' },
+        totalAmount: { type: 'number', example: 250000 },
+        transactions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              amount: { type: 'number', example: 200000 },
+              category: { type: 'string', example: 'food' },
+              note: { type: 'string', example: 'Main course' },
+              dateTime: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+        shares: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              memberId: { type: 'string' },
+              memberName: { type: 'string' },
+              amount: { type: 'string', example: '83333.33' },
+              isPaid: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Expense not found' })
+  async getExpenseDetail(
+    @Param('groupId') groupId: string,
+    @Param('expenseId') expenseId: string,
+  ) {
+    return this.groupExpenseService.getExpenseDetail(groupId, expenseId);
   }
 
   @Get('my-debts')
@@ -361,5 +542,143 @@ export class GroupExpenseController {
     );
 
     return this.groupExpenseService.getOwedToMe(groupId, String(memberId));
+  }
+
+  @Post('upload-proof')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Upload payment proof image',
+    description: 'Upload an image as proof of payment for a share (debtor only)',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Payment proof image (jpg, jpeg, png, gif, webp)',
+        },
+        shareId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Share ID to upload proof for',
+        },
+      },
+      required: ['file', 'shareId'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Proof uploaded successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        shareId: { type: 'string', format: 'uuid' },
+        proofImageUrl: { type: 'string', example: '/uploads/proofs/abc123.jpg' },
+        proofStatus: { type: 'string', enum: ['pending'] },
+        proofUploadedAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - no file or invalid share' })
+  @ApiResponse({ status: 403, description: 'Only the debtor can upload proof' })
+  async uploadProof(
+    @Param('groupId') groupId: string,
+    @Body() dto: UploadProofDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
+
+    const imageUrl = `/uploads/proofs/${file.filename}`;
+
+    return this.groupExpenseService.uploadProof(
+      dto.shareId,
+      String(memberId),
+      groupId,
+      imageUrl,
+    );
+  }
+
+  @Post('review-proof')
+  @ApiOperation({
+    summary: 'Approve or reject payment proof',
+    description: 'Payer reviews and approves/rejects the proof uploaded by debtor',
+  })
+  @ApiParam({ name: 'groupId', description: 'Group ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        shareId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Share ID to review proof for',
+        },
+        approved: {
+          type: 'boolean',
+          description: 'true to approve, false to reject',
+        },
+      },
+      required: ['shareId', 'approved'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Proof reviewed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        shareId: { type: 'string', format: 'uuid' },
+        proofStatus: { type: 'string', enum: ['approved', 'rejected'] },
+        isPaid: { type: 'boolean' },
+        paidAt: { type: 'string', format: 'date-time', nullable: true },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'No pending proof to review' })
+  @ApiResponse({ status: 403, description: 'Only the payer can review proof' })
+  async reviewProof(
+    @Param('groupId') groupId: string,
+    @Body() dto: { shareId: string; approved: boolean },
+    @Req() req: Request,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) throw new BadRequestException('Missing or invalid JWT token');
+
+    if (!dto.shareId) {
+      throw new BadRequestException('shareId is required');
+    }
+
+    if (typeof dto.approved !== 'boolean') {
+      throw new BadRequestException('approved must be a boolean');
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const memberId = await this.groupClientService.getMyMemberId(
+      groupId,
+      authHeader,
+    );
+
+    return this.groupExpenseService.reviewProof(
+      dto.shareId,
+      String(memberId),
+      groupId,
+      dto.approved,
+    );
   }
 }
