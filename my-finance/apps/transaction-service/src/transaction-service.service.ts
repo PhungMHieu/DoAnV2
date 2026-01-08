@@ -31,7 +31,7 @@ export class TransactionServiceService {
   private getDelta(category: string, amount: number) {
     return category.toLowerCase() === 'income' ? amount : -amount;
   }
-
+  
   async createTransaction(userId: string, data: TransactionEntity) {
     const savedTx = await this.dataSource.transaction(async (manager) => {
       const txRepo = manager.getRepository(TransactionEntity);
@@ -260,6 +260,33 @@ export class TransactionServiceService {
     }
   }
 
+  async getTotalIncomeAndExpenses(
+    userId: string,
+  ): Promise<{ totalIncome: number; totalExpenses: number }> {
+    try {
+      const transactions = await this.transactionRepository.find({
+        where: { userId },
+      });
+
+      const totals = transactions.reduce(
+        (acc, transaction) => {
+          if (transaction.category.toLowerCase() === 'income') {
+            acc.totalIncome += transaction.amount;
+          } else {
+            acc.totalExpenses += transaction.amount;
+          }
+          return acc;
+        },
+        { totalIncome: 0, totalExpenses: 0 },
+      );
+
+      return totals;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to fetch total income and expenses: ${error.message}`,
+      );
+    }
+  }
   private async ensureAccount(userId: string, manager: EntityManager) {
     const accountRepo = manager.getRepository(AccountEntity);
 

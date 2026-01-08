@@ -33,6 +33,32 @@ export class TransactionServiceController {
   constructor(
     private readonly transactionServiceService: TransactionServiceService,
   ) {}
+  @Get('allexpense')
+  @ApiOperation({
+    summary: 'Get total income and expenses',
+    description: 'Retrieves the total income and expenses for the user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Total income and expenses retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        totalIncome: { type: 'number', example: 500000 },
+        totalExpenses: { type: 'number', example: 300000 },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Missing x-user-id header' })
+  async getTotalIncomeAndExpenses(@Req() req): Promise<{ totalIncome: number; totalExpenses: number }> {
+    const userId = getUserIdFromRequest(req);
+
+    if (!userId) {
+      throw new UnauthorizedException('Missing or invalid JWT token');
+    }
+
+    return await this.transactionServiceService.getTotalIncomeAndExpenses(userId);
+  }
   @Get('months')
   @ApiOperation({
     summary: 'Get available months',
